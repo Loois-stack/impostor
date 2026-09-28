@@ -1,4 +1,5 @@
 import { BY_CAT, BY_ID, decoyCandidates } from '../data';
+import { THEMES, type Theme } from '../data/themes';
 import type { CategoryId, Item, Level } from '../data/types';
 import type { Rng } from './rng';
 
@@ -16,6 +17,9 @@ export interface History {
   pairs: string[];
   lastCat?: CategoryId;
   challengeLast: Record<string, number>;
+  /** Modo Mezcla: tema -> ronda global en que salió. */
+  themeLast: Record<string, number>;
+  lastTheme?: string;
 }
 
 export const emptyHistory = (): History => ({
@@ -26,6 +30,7 @@ export const emptyHistory = (): History => ({
   decoyUse: {},
   pairs: [],
   challengeLast: {},
+  themeLast: {},
 });
 
 const MAX_PAIRS = 4000;
@@ -90,7 +95,30 @@ export function pickDecoy(civil: Item, sim: Similarity, h: History, rng: Rng): {
   throw new Error(`Sin señuelos para ${civil.id}`);
 }
 
-export function commitRound(h: History, cat: CategoryId, civil: Item, decoy: Item | null): History {
+/** Modo Mezcla: tema con más tiempo sin salir, nunca el mismo dos veces seguidas. */
+export function pickTheme(h: History, rng: Rng): Theme {
+  const pool = THEMES.filter((t) => t.id !== h.lastTheme);
+  return rng.weighted(pool, (t) => 1 + Math.min(h.round - (h.themeLast[t.id] ?? -99), 20) * 0.5);
+}
+
+/**
+ * Carta civil y señuelo del mismo tema, preferentemente de categorías distintas
+ * (Pennywise vs. el Joker). Evita cartas recientes y parejas ya jugadas.
+ */
+export function pickFromTheme(theme: Theme, h: History, rng: Rng): { civil: Item; decoy: Item; level: Level } {
+  const items = theme.items.map((id) => BY_ID[id]).filter(Boolean);
+  const since = (i: Item) => h.round - Math.max(h.itemUse[i.id]?.[1] ?? -999, h.decoyUse[i.id] ?? -999);
+  const civil = rng.weighted(items, (i) => (since(i) < 25 ? 0.05 : 1));
+  const others = items.filter((i) => i.id !== civil.id);
+  const cross = others.filter((i) => i.cat !== civil.cat);
+  const pool = cross.length ? cross : others;
+  const used = new Set(h.pairs);
+  const fresh = pool.filter((d) => !used.has(pairKey(civil.id, d.id)));
+  const decoy = rng.weighted(fresh.length ? fresh : pool, (d) => (since(d) < 10 ? 0.2 : 1));
+  return { civil, decoy, level: civil.sim.find((s) => s.id === decoy.id)?.level ?? 2 };
+}
+
+export function commitRound(h: History, cat: CategoryId, civil: Item, decoy: Item | null, themeId?: string): History {
   const round = h.round + 1;
   const catPlays = { ...h.catPlays, [cat]: (h.catPlays[cat] ?? 0) + 1 };
   const itemUse = { ...h.itemUse, [civil.id]: [catPlays[cat]!, round] as [number, number] };
@@ -105,6 +133,8 @@ export function commitRound(h: History, cat: CategoryId, civil: Item, decoy: Ite
     decoyUse,
     pairs: pairs.slice(-MAX_PAIRS),
     lastCat: cat,
+    themeLast: themeId ? { ...h.themeLast, [themeId]: round } : h.themeLast,
+    lastTheme: themeId ?? h.lastTheme,
   };
 }
 

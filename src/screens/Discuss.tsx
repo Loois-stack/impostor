@@ -6,7 +6,8 @@ import { Avatar, Button, Glitch, IconButton } from '../components/ui';
 import { CAT } from '../data/categories';
 import { CHALLENGES, KIND_META } from '../data/challenges';
 import { EVENTS } from '../engine/events';
-import { shake } from '../fx/fx';
+import { THEME_BY_ID } from '../data/themes';
+import { burst, flash, shake } from '../fx/fx';
 import { useGame } from '../store/game';
 
 function TurnTimer({ seconds, turnKey }: { seconds: number; turnKey: string }) {
@@ -62,20 +63,150 @@ function TurnTimer({ seconds, turnKey }: { seconds: number; turnKey: string }) {
   );
 }
 
+const fmt = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+
+/** Reloj de toda la ronda de pistas. Se basa en la hora de inicio, así sobrevive a recargas. */
+function RoundClock({ endsAt, total, onTimeUp }: { endsAt: number; total: number; onTimeUp: () => void }) {
+  const [left, setLeft] = useState(() => Math.max(0, (endsAt - Date.now()) / 1000));
+  useEffect(() => {
+    let lastSec = Math.ceil(left);
+    let warned = left <= 60;
+    let fired = false;
+    const id = setInterval(() => {
+      const l = Math.max(0, (endsAt - Date.now()) / 1000);
+      setLeft(l);
+      const sec = Math.ceil(l);
+      if (sec !== lastSec) {
+        lastSec = sec;
+        if (!warned && sec <= 60 && total > 60) {
+          warned = true;
+          sfx.riser(1);
+          haptic([60, 40, 60]);
+        }
+        if (sec <= 10 && sec > 0) {
+          sfx.tick(true);
+          haptic(20);
+        }
+      }
+      if (l <= 0 && !fired) {
+        fired = true;
+        clearInterval(id);
+        onTimeUp();
+      }
+    }, 200);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endsAt]);
+
+  const urgent = left <= 10;
+  const warn = left <= 60;
+  const color = urgent ? '#ff2e4d' : warn ? '#ffb547' : '#fff';
+  return (
+    <motion.div
+      animate={urgent ? { scale: [1, 1.1, 1] } : { scale: 1 }}
+      transition={urgent ? { repeat: Infinity, duration: 1 } : undefined}
+      className="panel row"
+      style={{ padding: '6px 12px', gap: 8, borderColor: color, boxShadow: warn ? `0 0 20px ${color}66` : undefined, position: 'relative', overflow: 'hidden' }}
+    >
+      <div style={{ position: 'absolute', left: 0, bottom: 0, height: 3, width: `${(left / total) * 100}%`, background: color, transition: 'width .2s linear' }} />
+      <span style={{ fontSize: 16 }}>⏱️</span>
+      <span className="display" style={{ fontSize: 26, color, fontVariantNumeric: 'tabular-nums' }}>
+        {fmt(left)}
+      </span>
+    </motion.div>
+  );
+}
+
+function ModeratorPicker({ onPick }: { onPick: (id: string) => void }) {
+  const players = useGame((s) => s.players);
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 45,
+        background: 'rgba(5,3,10,.88)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        padding: '24px 16px calc(var(--safe-b) + 16px)',
+        gap: 16,
+      }}
+    >
+      <div className="center" style={{ gap: 6 }}>
+        <motion.div animate={{ rotate: [-8, 8, -8] }} transition={{ repeat: Infinity, duration: 1.6 }} style={{ fontSize: 56 }}>
+          📱
+        </motion.div>
+        <div className="h2">¿Quién será el encargado?</div>
+        <div className="dim" style={{ maxWidth: 320, lineHeight: 1.45, fontSize: 14 }}>
+          Esa persona sostiene el teléfono y toca <b>Siguiente</b> cuando cada jugador dé su pista. Ya no hace falta pasarlo.
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8, maxWidth: 520, width: '100%', margin: '0 auto' }}>
+        {players.map((p, i) => (
+          <motion.button
+            key={p.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.04 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => {
+              sfx.select();
+              haptic(15);
+              onPick(p.id);
+            }}
+            className="panel center"
+            style={{ gap: 6, padding: 12 }}
+          >
+            <Avatar player={p} size={48} />
+            <b style={{ fontSize: 14 }}>{p.name}</b>
+          </motion.button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
 export function Discuss() {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
-  const { nextTurn, dismissChallenge, toggleCursed, go } = useGame();
+  const { nextTurn, dismissChallenge, toggleCursed, go, setModerator } = useGame();
+  const moderatorId = useGame((s) => s.session.moderator);
   const [cursedSheet, setCursedSheet] = useState(false);
-  const cat = CAT[round.cat];
+  const [pickMod, setPickMod] = useState(false);
+  const [timeUp, setTimeUp] = useState(false);
+  const theme = round.theme ? THEME_BY_ID[round.theme] : undefined;
+  const cat = theme ? { emoji: theme.emoji, name: theme.name, color: theme.color, horror: theme.horror } : CAT[round.cat];
+  const moderator = players.find((p) => p.id === moderatorId);
+  const needsModerator = !moderator || pickMod;
   const pid = round.order[round.turn];
   const player = players.find((p) => p.id === pid)!;
   const event = round.event && !EVENTS[round.event].secret ? EVENTS[round.event] : undefined;
   const turnKey = `${round.lap}-${round.turn}`;
   const activeCh = round.challenges[pid] ? CHALLENGES.find((c) => c.id === round.challenges[pid]) : undefined;
-  const isLastTurn = round.lap === round.laps && round.turn === round.order.length - 1;
-  const canVote = round.lap > 1 || round.turn === round.order.length - 1;
-  const pending = round.pendingChallenge === pid;
+  const isLastTurn = round.laps > 0 && round.lap === round.laps && round.turn === round.order.length - 1;
+  const pending = round.pendingChallenge === pid && !needsModerator;
+
+  const onTimeUp = () => {
+    setTimeUp(true);
+    sfx.impostor();
+    haptic([200, 80, 200]);
+    flash('#ff2e4d', 700, 0.6);
+    shake(18, 600);
+    burst({ kind: 'sparks', colors: ['#ff2e4d', '#fff'], count: 50 });
+  };
+
+  // Al acabarse el tiempo se pasa solo a votar (se cancela si ya salieron de la pantalla).
+  useEffect(() => {
+    if (!timeUp) return;
+    const t = setTimeout(() => go('vote'), 3200);
+    return () => clearTimeout(t);
+  }, [timeUp, go]);
 
   useEffect(() => {
     if (!pending) {
@@ -92,12 +223,29 @@ export function Discuss() {
         </IconButton>
         <div className="grow">
           <div className="label">
-            Ronda {round.n} · Vuelta {round.lap}/{round.laps}
+            Ronda {round.n} · Vuelta {round.lap}
+            {round.laps > 0 ? `/${round.laps}` : ''}
+            {round.accused.length ? ` · Quedan ${round.order.length - round.accused.length}` : ''}
+            {theme ? ' · 🔀 Mezcla' : ''}
           </div>
           <div className={`display ${cat.horror ? 'horror-font' : ''}`} style={{ fontSize: 24, color: cat.color }}>
             {cat.emoji} {cat.name}
           </div>
         </div>
+        {round.roundTime > 0 && round.startedAt ? (
+          <RoundClock endsAt={round.startedAt + round.roundTime * 1000} total={round.roundTime} onTimeUp={onTimeUp} />
+        ) : null}
+      </div>
+
+      <div className="row content" style={{ gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        {moderator && (
+          <motion.button whileTap={{ scale: 0.95 }} onClick={() => setPickMod(true)} className="panel row" style={{ padding: '5px 10px', gap: 6, fontSize: 12 }}>
+            <span>📱</span>
+            <Avatar player={moderator} size={22} />
+            <b>{moderator.name}</b>
+            <span className="dim">controla</span>
+          </motion.button>
+        )}
         {event && (
           <div className="panel" style={{ padding: '6px 10px', fontSize: 12, fontWeight: 800 }}>
             {event.emoji} {event.title}
@@ -105,6 +253,12 @@ export function Discuss() {
         )}
       </div>
 
+      {round.event === 'oneword' && (
+        <div className="panel row content" style={{ padding: '10px 14px', marginBottom: 8, borderColor: 'var(--accent)' }}>
+          <span style={{ fontSize: 22 }}>☝️</span>
+          <b style={{ fontSize: 13 }}>Esta ronda: pistas de UNA sola palabra</b>
+        </div>
+      )}
       {round.cursedWord && (
         <motion.button
           whileTap={{ scale: 0.97 }}
@@ -125,10 +279,20 @@ export function Discuss() {
       <div className="row content" style={{ justifyContent: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
         {round.order.map((id, i) => {
           const p = players.find((x) => x.id === id)!;
-          const done = round.lap > 1 ? i < round.turn || round.lap > round.laps : i < round.turn;
+          const done = i < round.turn;
+          const out = round.accused.includes(id);
           return (
-            <motion.div key={id} animate={{ scale: i === round.turn ? 1.2 : 1, opacity: i === round.turn ? 1 : done ? 0.35 : 0.7 }}>
-              <Avatar player={p} size={30} style={{ boxShadow: i === round.turn ? `0 0 0 3px #fff, 0 0 16px ${p.color}` : undefined }} />
+            <motion.div
+              key={id}
+              animate={{ scale: i === round.turn ? 1.2 : out ? 0.8 : 1, opacity: i === round.turn ? 1 : out ? 0.25 : done ? 0.35 : 0.7 }}
+              style={{ position: 'relative' }}
+            >
+              <Avatar
+                player={p}
+                size={30}
+                style={{ boxShadow: i === round.turn ? `0 0 0 3px #fff, 0 0 16px ${p.color}` : undefined, filter: out ? 'grayscale(1)' : undefined }}
+              />
+              {out && <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 16 }}>💀</span>}
             </motion.div>
           );
         })}
@@ -159,8 +323,13 @@ export function Discuss() {
               {player.name}
             </div>
             <div style={{ fontSize: 17, lineHeight: 1.4, maxWidth: 300 }}>
-              Di <b>una palabra o frase</b> sobre tu carta. Ni muy obvia… ni muy vaga.
+              Di <b>{round.event === 'oneword' ? 'UNA sola palabra' : 'una palabra o frase'}</b> sobre tu carta. Ni muy obvia… ni muy vaga.
             </div>
+            {moderator && (
+              <div className="dim" style={{ fontSize: 12.5 }}>
+                📱 {moderator.name} toca <b>Siguiente</b> cuando termine
+              </div>
+            )}
             {activeCh && !pending && (
               <motion.div
                 initial={{ scale: 0 }}
@@ -176,13 +345,13 @@ export function Discuss() {
         </AnimatePresence>
       </div>
 
-      <div className="stack content" style={{ gap: 8 }}>
-        <Button onClick={() => nextTurn()} variant={isLastTurn ? 'danger' : 'plain'}>
+      <div className="row content" style={{ gap: 8 }}>
+        <Button onClick={() => nextTurn()} variant={isLastTurn ? 'danger' : 'plain'} style={{ flex: 2 }}>
           {isLastTurn ? '🗳️ ¡A votar!' : 'Siguiente ➜'}
         </Button>
-        {canVote && !isLastTurn && (
-          <Button variant="ghost" small onClick={() => go('vote')}>
-            🗳️ Votar ya
+        {!isLastTurn && (
+          <Button variant="danger" onClick={() => go('vote')} style={{ flex: 1, fontSize: 22 }}>
+            🗳️ Votar
           </Button>
         )}
       </div>
@@ -190,6 +359,38 @@ export function Discuss() {
       <AnimatePresence>
         {pending && round.challenges[pid] && (
           <ChallengeOverlay key={turnKey} player={player} challengeId={round.challenges[pid]} onAccept={dismissChallenge} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {needsModerator && (
+          <ModeratorPicker
+            onPick={(id) => {
+              setModerator(id);
+              setPickMod(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {timeUp && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            style={{ position: 'fixed', inset: 0, zIndex: 46, background: 'rgba(40,0,10,.85)', display: 'grid', placeItems: 'center', padding: 16 }}
+          >
+            <motion.div initial={{ scale: 3, rotate: -15 }} animate={{ scale: 1, rotate: -4 }} transition={{ type: 'spring', stiffness: 300, damping: 12 }} className="center" style={{ gap: 12 }}>
+              <div style={{ fontSize: 80 }}>⏰</div>
+              <div className="h1" style={{ color: '#ff2e4d', textShadow: '0 0 30px #ff2e4d' }}>
+                <Glitch text="¡SE ACABÓ EL TIEMPO!" hard />
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>Hora de votar…</div>
+              <Button variant="danger" onClick={() => go('vote')} style={{ maxWidth: 320 }}>
+                🗳️ Votar ahora
+              </Button>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

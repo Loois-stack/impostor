@@ -121,7 +121,9 @@ describe('puntuación', () => {
     expect(r.lines.find((l) => l.player === 'a')!.base).toBe(0);
   });
   it('impostor gana si sobrevive; bonus por adivinar si lo atrapan', () => {
-    expect(scoreRound({ ...base, impostors: ['a'], accused: ['b'], nobodyVote: false }).lines[0].base).toBe(250);
+    expect(scoreRound({ ...base, impostors: ['a'], accused: [], nobodyVote: false }).lines[0].base).toBe(250);
+    // +50 por cada inocente que hizo eliminar
+    expect(scoreRound({ ...base, impostors: ['a'], accused: ['b', 'c'], nobodyVote: false }).lines[0].base).toBe(350);
     expect(scoreRound({ ...base, impostors: ['a'], accused: ['a'], nobodyVote: false, guessed: { a: true } }).lines[0].base).toBe(150);
   });
   it('ronda sin impostor', () => {

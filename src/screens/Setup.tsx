@@ -1,10 +1,16 @@
 import { motion } from 'framer-motion';
 import { haptic, sfx } from '../audio/sfx';
 import { Button, Segmented, Toggle, TopBar } from '../components/ui';
-import { BY_CAT } from '../data';
-import { CATEGORIES } from '../data/categories';
+import { BY_CAT, MIN_CUSTOM } from '../data';
+import { CATEGORIES, CUSTOM_CAT } from '../data/categories';
 import type { CategoryId } from '../data/types';
 import { useGame } from '../store/game';
+
+const MIX_DESC = {
+  off: 'Cada ronda sale de una de las categorías elegidas.',
+  on: 'Temas que cruzan categorías: Payasos (Pennywise, el Joker, Krusty…), Robots, Calvos legendarios… El impostor puede tener un personaje de OTRA categoría.',
+  mixed: 'A veces categoría normal, a veces un tema de Mezcla. Nunca sabes qué viene.',
+};
 
 const SIM_DESC = {
   close: 'El impostor casi siempre tendrá algo muy parecido: podrá camuflarse fácil. Rondas tensas.',
@@ -13,13 +19,14 @@ const SIM_DESC = {
 };
 
 export function Setup() {
-  const { settings, setSettings, players, session, go, startRound, newSession } = useGame();
-  const allOn = settings.cats.length === CATEGORIES.length;
+  const { settings, setSettings, players, session, go, startRound, newSession, customCards } = useGame();
+  const allOn = CATEGORIES.every((c) => settings.cats.includes(c.id));
+  const customOn = settings.cats.includes('custom') && customCards.length >= MIN_CUSTOM;
   const canTwo = players.length >= 6;
 
   const toggleCat = (id: CategoryId) => {
     const on = settings.cats.includes(id);
-    if (on && settings.cats.length === 1) return;
+    if (on && settings.cats.filter((c) => c !== 'custom' || customOn).length === 1) return;
     sfx.select();
     haptic(8);
     setSettings({ cats: on ? settings.cats.filter((c) => c !== id) : [...settings.cats, id] });
@@ -39,14 +46,15 @@ export function Setup() {
         <div className="stack" style={{ gap: 20 }}>
           <section className="stack" style={{ gap: 10 }}>
             <div className="row">
-              <div className="label grow">Categorías · {settings.cats.length}</div>
+              <div className="label grow">Categorías · {settings.cats.filter((c) => c !== 'custom' || customOn).length}</div>
               <motion.button
                 whileTap={{ scale: 0.9 }}
                 className="label"
                 style={{ color: 'var(--accent)', padding: 6 }}
                 onClick={() => {
                   sfx.select();
-                  setSettings({ cats: allOn ? ['memes'] : CATEGORIES.map((c) => c.id) });
+                  const keep = settings.cats.includes('custom') ? (['custom'] as CategoryId[]) : [];
+                  setSettings({ cats: allOn ? (keep.length ? keep : ['memes']) : [...CATEGORIES.map((c) => c.id), ...keep] });
                 }}
               >
                 {allOn ? 'Quitar todas' : '🎲 Aleatorio total'}
@@ -88,6 +96,67 @@ export function Setup() {
                   </motion.button>
                 );
               })}
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                sfx.select();
+                go('custom');
+              }}
+              className="panel row"
+              style={{
+                padding: '12px 14px',
+                textAlign: 'left',
+                borderColor: customOn ? CUSTOM_CAT.color : undefined,
+                background: customOn ? `linear-gradient(135deg, ${CUSTOM_CAT.color}33, ${CUSTOM_CAT.color2}44)` : undefined,
+              }}
+            >
+              <span style={{ fontSize: 26 }}>{CUSTOM_CAT.emoji}</span>
+              <span className="grow">
+                <b style={{ display: 'block' }}>Mis cartas</b>
+                <small className="dim">
+                  {customCards.length
+                    ? `${customCards.length} cartas · ${customOn ? 'incluidas en la partida' : 'toca para crear o incluir'}`
+                    : 'Crea cartas propias con fotos de tus amigos, chistes internos…'}
+                </small>
+              </span>
+              <span style={{ fontSize: 20 }}>›</span>
+            </motion.button>
+          </section>
+
+          <section className="stack" style={{ gap: 8 }}>
+            <div className="label">🔀 Modo Mezcla</div>
+            <Segmented
+              id="mix"
+              value={settings.mix}
+              onChange={(mix) => setSettings({ mix })}
+              options={[
+                { value: 'off', label: 'Categorías' },
+                { value: 'on', label: 'Mezcla' },
+                { value: 'mixed', label: 'Ambos' },
+              ]}
+            />
+            <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
+              {MIX_DESC[settings.mix]}
+            </div>
+          </section>
+
+          <section className="stack" style={{ gap: 8 }}>
+            <div className="label">⏱️ Tiempo de la ronda</div>
+            <Segmented
+              id="roundTime"
+              value={settings.roundTime}
+              onChange={(roundTime) => setSettings({ roundTime })}
+              options={[
+                { value: 0, label: 'Libre' },
+                { value: 120, label: '2 min' },
+                { value: 180, label: '3 min' },
+                { value: 300, label: '5 min' },
+                { value: 480, label: '8 min' },
+              ]}
+            />
+            <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
+              El reloj corre durante las pistas. Pueden votar cuando quieran; al acabarse el tiempo, se vota sí o sí.
             </div>
           </section>
 
@@ -141,6 +210,7 @@ export function Setup() {
                 value={settings.laps}
                 onChange={(laps) => setSettings({ laps })}
                 options={[
+                  { value: 0, label: '∞' },
                   { value: 1, label: '1' },
                   { value: 2, label: '2' },
                   { value: 3, label: '3' },
@@ -165,6 +235,13 @@ export function Setup() {
           </section>
 
           <section className="stack" style={{ gap: 8 }}>
+            <Toggle
+              emoji="💀"
+              on={settings.elimination}
+              onChange={(elimination) => setSettings({ elimination })}
+              title="Eliminación"
+              desc="Si votan a un inocente, sale del juego y siguen buscando. Si quedan solo 2, gana el impostor."
+            />
             <Toggle
               emoji="🎭"
               on={settings.challenges}

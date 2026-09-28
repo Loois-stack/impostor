@@ -28,6 +28,7 @@ export function SettingsScreen() {
             }}
             title="Sonido"
           />
+          <Toggle emoji="🎵" on={settings.music} onChange={(music) => setSettings({ music })} title="Música de fondo" desc="Generada en vivo: cambia en el menú, la partida, la votación y el terror." />
           <Toggle emoji="📳" on={settings.vibration} onChange={(vibration) => setSettings({ vibration })} title="Vibración" />
 
           <div className="panel stack" style={{ gap: 10 }}>

@@ -5,9 +5,10 @@ import { MiniCard } from '../components/MiniCard';
 import { Avatar, Button, Glitch } from '../components/ui';
 import { BY_ID, decoyCandidates } from '../data';
 import { CHALLENGES, KIND_META } from '../data/challenges';
+import { THEME_BY_ID } from '../data/themes';
 import { makeRng } from '../engine/rng';
 import { burst, flash, shake } from '../fx/fx';
-import { useGame, type Player } from '../store/game';
+import { roundStatus, useGame, type Player } from '../store/game';
 
 type Phase = 'suspense' | 'verdict' | 'truth' | 'guess' | 'challenges';
 
@@ -39,7 +40,7 @@ function Stamp({ good, text, delay = 0 }: { good: boolean; text: string; delay?:
 export function Reveal() {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
-  const { setGuess, setChallengeResult, finishRound } = useGame();
+  const { setGuess, setChallengeResult, finishRound, continueRound } = useGame();
   const [phase, setPhase] = useState<Phase>('suspense');
   const [guessIdx, setGuessIdx] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
@@ -49,15 +50,22 @@ export function Reveal() {
   const decoy = round.decoy ? BY_ID[round.decoy] : null;
   const caught = round.impostors.filter((i) => round.accused.includes(i));
   const escaped = round.impostors.filter((i) => !round.accused.includes(i));
+  const lastVote = round.lastVote ?? round.accused;
+  const lastCaught = round.impostors.filter((i) => lastVote.includes(i));
+  const status = roundStatus(round);
+  const innocentsOut = round.accused.filter((id) => !round.impostors.includes(id));
   const challengePlayers = Object.keys(round.challenges);
   const correctNobody = round.nobodyVote && round.impostors.length === 0;
 
   const options = useMemo(() => {
     const rng = makeRng(round.n * 7919 + round.civil.length);
     const c = decoyCandidates(civil);
-    const pool = [...rng.shuffle(c[1]), ...rng.shuffle(c[2]), ...rng.shuffle(c[3])].filter((i) => i.id !== round.decoy);
+    const themed = round.theme ? THEME_BY_ID[round.theme].items.map((id) => BY_ID[id]).filter((i) => i && i.id !== civil.id) : [];
+    const pool = [...rng.shuffle(themed), ...rng.shuffle(c[1]), ...rng.shuffle(c[2]), ...rng.shuffle(c[3])].filter(
+      (i, idx, arr) => i.id !== round.decoy && arr.findIndex((x) => x.id === i.id) === idx,
+    );
     return rng.shuffle([civil, ...pool.slice(0, 5)]);
-  }, [round.n, round.civil, round.decoy, civil]);
+  }, [round.n, round.civil, round.decoy, round.theme, civil]);
 
   // Suspenso -> veredicto
   useEffect(() => {
@@ -76,7 +84,7 @@ export function Reveal() {
           flash('#ff2e4d', 600, 0.7);
           shake(20, 700);
         }
-      } else if (caught.length) {
+      } else if (lastCaught.length) {
         sfx.impostor();
         haptic([100, 50, 200]);
         flash('#ff2e4d', 600, 0.75);
@@ -93,7 +101,7 @@ export function Reveal() {
       clearTimeout(t);
       beats.forEach(clearTimeout);
     };
-  }, [phase, caught.length, correctNobody, round.nobodyVote]);
+  }, [phase, lastCaught.length, correctNobody, round.nobodyVote]);
 
   const goTruth = () => {
     setPhase('truth');
@@ -157,7 +165,7 @@ export function Reveal() {
               {round.nobodyVote ? (
                 <div style={{ fontSize: 110 }}>🫥</div>
               ) : (
-                round.accused.map((id) => (
+                lastVote.map((id) => (
                   <div key={id} className="center" style={{ gap: 10 }}>
                     <Avatar player={P(id)} size={120} />
                     <b className="display" style={{ fontSize: 40 }}>
@@ -185,10 +193,31 @@ export function Reveal() {
                 </div>
               </>
             ) : (
-              verdictList(round.accused)
+              verdictList(lastVote)
+            )}
+            {!status.over && (
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1 }} className="panel center" style={{ gap: 6, maxWidth: 360 }}>
+                <div style={{ fontSize: 17, fontWeight: 800 }}>
+                  {lastCaught.length ? '¡Atraparon a uno! Pero todavía queda otro impostor…' : `💀 ${lastVote.map((id) => P(id).name).join(' y ')} queda fuera del juego`}
+                </div>
+                <div className="dim" style={{ fontSize: 13.5 }}>
+                  Quedan {status.alive.length} jugadores. El impostor sigue entre ustedes…
+                </div>
+              </motion.div>
             )}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }} style={{ width: '100%' }}>
-              <Button onClick={goTruth}>Ver la verdad 👁️</Button>
+              {status.over ? (
+                <Button onClick={goTruth}>Ver la verdad 👁️</Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    sfx.whoosh();
+                    continueRound();
+                  }}
+                >
+                  🔎 Seguir buscando
+                </Button>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -222,7 +251,29 @@ export function Reveal() {
                     </motion.div>
                   ))}
                 </div>
+                {status.impParity && round.elimination && innocentsOut.length > 0 && (
+                  <div style={{ fontWeight: 800, color: '#ff5470' }}>¡Solo quedaban {status.alive.length}! El impostor ya no podía perder.</div>
+                )}
+                {innocentsOut.length > 0 && (
+                  <div className="row" style={{ gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <span className="dim" style={{ fontSize: 12 }}>
+                      Inocentes eliminados:
+                    </span>
+                    {innocentsOut.map((id) => (
+                      <span key={id} className="row panel" style={{ padding: '3px 8px', gap: 4, fontSize: 12 }}>
+                        💀 <b>{P(id).name}</b>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {round.event === 'blind' && <div className="dim">…¡y ni siquiera sabía que era el impostor! 🙈</div>}
+                {round.accomplice && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2 }} className="row panel" style={{ padding: '6px 12px', borderColor: '#ff8a3d' }}>
+                    <span>🤝 Su cómplice era</span>
+                    <Avatar player={P(round.accomplice)} size={26} />
+                    <b>{P(round.accomplice).name}</b>
+                  </motion.div>
+                )}
               </div>
             )}
 

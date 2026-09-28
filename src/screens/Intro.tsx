@@ -4,6 +4,7 @@ import { haptic, sfx } from '../audio/sfx';
 import { Button, Glitch } from '../components/ui';
 import { BY_ID } from '../data';
 import { CAT, CATEGORIES } from '../data/categories';
+import { THEME_BY_ID, THEMES } from '../data/themes';
 import { EVENTS } from '../engine/events';
 import { burst, flash, shake } from '../fx/fx';
 import { preload } from '../services/images';
@@ -16,7 +17,15 @@ const LOOPS = 4;
 export function Intro() {
   const round = useGame((s) => s.round)!;
   const go = useGame((s) => s.go);
-  const cat = CAT[round.cat];
+  const theme = round.theme ? THEME_BY_ID[round.theme] : undefined;
+  // En Mezcla la ruleta gira por temas; si no, por categorías.
+  const entries = theme
+    ? THEMES.map((t) => ({ id: t.id, emoji: t.emoji, name: t.name, color: t.color, horror: t.horror }))
+    : CATEGORIES.map((c) => ({ id: c.id as string, emoji: c.emoji, name: c.name, color: c.color, horror: c.horror }));
+  const target = theme
+    ? { id: theme.id, color: theme.color, color2: CAT[round.cat].color2, tagline: '🔀 Modo Mezcla: cartas de distintas categorías' }
+    : { id: round.cat as string, color: CAT[round.cat].color, color2: CAT[round.cat].color2, tagline: CAT[round.cat].tagline };
+  const cat = target;
   const event = round.event ? EVENTS[round.event] : undefined;
   const showEvent = event && !event.secret;
   const [phase, setPhase] = useState<'spin' | 'land' | 'event'>('spin');
@@ -24,10 +33,11 @@ export function Intro() {
 
   const reel = useMemo(() => {
     const list = [];
-    for (let l = 0; l < LOOPS; l++) list.push(...CATEGORIES);
+    for (let l = 0; l < LOOPS; l++) list.push(...entries);
     return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const targetIdx = (LOOPS - 1) * CATEGORIES.length + CATEGORIES.findIndex((c) => c.id === round.cat);
+  const targetIdx = (LOOPS - 1) * entries.length + entries.findIndex((c) => c.id === target.id);
 
   useEffect(() => {
     preload([BY_ID[round.civil], round.decoy ? BY_ID[round.decoy] : null]);
@@ -76,7 +86,7 @@ export function Intro() {
         {phase !== 'event' ? (
           <motion.div key="reel" exit={{ opacity: 0, scale: 0.7, filter: 'blur(10px)' }} className="content center" style={{ gap: 20, width: '100%' }}>
             <div className="dim" style={{ fontWeight: 800 }}>
-              La categoría es…
+              {theme ? '🔀 El tema es…' : 'La categoría es…'}
             </div>
             <div
               style={{

@@ -29,8 +29,32 @@ interface NoiseOpts {
   wet?: number;
 }
 
+export type MusicMood = 'menu' | 'game' | 'tension' | 'horror';
+
+const midi = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
+
+interface MusicNote {
+  type?: Wave;
+  f: number;
+  dur: number;
+  vol: number;
+  attack?: number;
+  wet?: number;
+  lp?: number;
+  f2?: number;
+  detune?: number;
+}
+
+type Voice = (step: number, when: number, spb: number) => void;
+
 class Sfx {
   enabled = true;
+  musicOn = true;
+  private musicGain!: GainNode;
+  private mood: MusicMood | null = null;
+  private seqTimer = 0;
+  private step = 0;
+  private nextTime = 0;
   private ctx?: AudioContext;
   private master!: GainNode;
   private verb!: ConvolverNode;
@@ -72,8 +96,98 @@ class Sfx {
       }
       this.shaper.curve = curve;
       this.shaper.connect(this.master);
+
+      this.musicGain = ctx.createGain();
+      this.musicGain.gain.value = 0;
+      this.musicGain.connect(this.master);
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx.state === 'suspended') void this.ctx.resume().then(() => this.applyMusic());
+    else if (!this.seqTimer) this.applyMusic();
+  }
+
+  // ---------------- Música procedural ----------------
+
+  setMusic(mood: MusicMood | null) {
+    if (mood === this.mood) return;
+    this.mood = mood;
+    if (this.ctx) this.applyMusic();
+  }
+
+  /** Reaplica el estado de la música (tras cambiar sonido/música o reanudar el audio). */
+  applyMusic() {
+    const ctx = this.ctx;
+    if (!ctx || !this.musicGain) return;
+    const on = this.enabled && this.musicOn && !!this.mood && ctx.state === 'running';
+    const g = this.musicGain.gain;
+    const t = ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(on ? 0.5 : 0, t + 0.5);
+    clearInterval(this.seqTimer);
+    this.seqTimer = 0;
+    if (!on) return;
+    this.step = 0;
+    this.nextTime = t + 0.15;
+    this.seqTimer = window.setInterval(() => this.schedule(), 30);
+  }
+
+  private schedule() {
+    const ctx = this.ctx!;
+    const song = this.mood ? SONGS[this.mood] : undefined;
+    if (!song) return;
+    const spb = 60 / song.bpm / 4;
+    // Si la pestaña estuvo en segundo plano, no intentamos "ponernos al día".
+    if (this.nextTime < ctx.currentTime - 0.5) this.nextTime = ctx.currentTime + 0.05;
+    while (this.nextTime < ctx.currentTime + 0.15) {
+      for (const v of song.voices(this)) v(this.step, this.nextTime, spb);
+      this.nextTime += spb;
+      this.step++;
+    }
+  }
+
+  /** Nota de música programada en un instante exacto. */
+  mnote(when: number, { type = 'triangle', f, dur, vol, attack = 0.01, wet = 0.25, lp, f2, detune = 0 }: MusicNote) {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.detune.value = detune;
+    o.frequency.setValueAtTime(f, when);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, when + dur);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(vol, when + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    o.connect(g);
+    let node: AudioNode = g;
+    if (lp) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = lp;
+      node = g.connect(filter);
+    }
+    node.connect(this.musicGain);
+    if (wet > 0) {
+      const w = ctx.createGain();
+      w.gain.value = wet;
+      node.connect(w).connect(this.verbIn);
+    }
+    o.start(when);
+    o.stop(when + dur + 0.05);
+  }
+
+  mnoise(when: number, dur: number, vol: number, hp = 7000) {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = hp;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, when);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    src.connect(f).connect(g).connect(this.musicGain);
+    src.start(when, Math.random());
+    src.stop(when + dur + 0.02);
   }
 
   private impulse(seconds: number, decay: number) {
@@ -307,10 +421,109 @@ class Sfx {
   }
 }
 
+const MINOR = [0, 3, 7, 12];
+const MAJOR = [0, 4, 7, 12];
+
+interface Song {
+  bpm: number;
+  voices: (s: Sfx) => Voice[];
+}
+
+const kick = (s: Sfx, when: number, vol = 0.22) => s.mnote(when, { type: 'sine', f: 120, f2: 42, dur: 0.22, vol, wet: 0 });
+
+/** Canciones generadas por pasos de 1/16. Cada compás = 16 pasos. */
+const SONGS: Record<MusicMood, Song> = {
+  menu: {
+    bpm: 88,
+    voices: (s) => {
+      const prog = [
+        [57, MINOR],
+        [53, MAJOR],
+        [48, MAJOR],
+        [55, MAJOR],
+      ] as const;
+      return [
+        (step, when, spb) => {
+          const [root, chord] = prog[Math.floor(step / 16) % 4];
+          const i = step % 16;
+          if (i === 0) {
+            kick(s, when, 0.16);
+            chord.slice(0, 3).forEach((c) =>
+              s.mnote(when, { type: 'sawtooth', f: midi(root + c), dur: spb * 16, vol: 0.012, attack: 0.4, lp: 900, wet: 0.5 }),
+            );
+          }
+          if (i === 8) kick(s, when, 0.12);
+          if (i === 0 || i === 6 || i === 10) s.mnote(when, { type: 'triangle', f: midi(root - 12), dur: 0.4, vol: 0.13, wet: 0.1 });
+          if (i % 2 === 0) s.mnote(when, { type: 'sine', f: midi(root + 12 + chord[(i / 2) % 4]), dur: 0.3, vol: 0.045, wet: 0.45 });
+          if (i % 4 === 2) s.mnoise(when, 0.04, 0.02);
+        },
+      ];
+    },
+  },
+  game: {
+    bpm: 102,
+    voices: (s) => {
+      const prog = [
+        [50, MINOR],
+        [46, MAJOR],
+        [53, MAJOR],
+        [48, MAJOR],
+      ] as const;
+      const arp = [0, 1, 2, 3, 2, 1, 2, 3];
+      return [
+        (step, when, spb) => {
+          const [root, chord] = prog[Math.floor(step / 16) % 4];
+          const i = step % 16;
+          if (i === 0 || i === 8) kick(s, when, 0.18);
+          if (i === 4 || i === 12) s.mnoise(when, 0.09, 0.035, 2500);
+          if (i % 2 === 1) s.mnoise(when, 0.03, 0.015);
+          if ([0, 3, 8, 11].includes(i)) s.mnote(when, { type: 'triangle', f: midi(root - 12), dur: spb * 2.5, vol: 0.12, wet: 0.05 });
+          s.mnote(when, { type: 'triangle', f: midi(root + 12 + chord[arp[i % 8]]), dur: 0.12, vol: 0.03, wet: 0.35 });
+        },
+      ];
+    },
+  },
+  tension: {
+    bpm: 120,
+    voices: (s) => [
+      (step, when) => {
+        const i = step % 16;
+        const root = Math.floor(step / 32) % 2 ? 41 : 40;
+        if (i % 2 === 0) s.mnote(when, { type: 'sawtooth', f: midi(root), dur: 0.14, vol: 0.07, lp: 500, wet: 0.05 });
+        if (i === 0 || i === 3) kick(s, when, 0.3);
+        if (i % 4 === 0) s.mnote(when, { type: 'square', f: 2000, dur: 0.02, vol: 0.012, wet: 0 });
+        if (step % 32 === 0) s.mnote(when, { type: 'sine', f: midi(83), dur: 3, vol: 0.02, attack: 1, detune: 12, wet: 0.7 });
+      },
+    ],
+  },
+  horror: {
+    bpm: 60,
+    voices: (s) => {
+      const scale = [69, 72, 75, 78, 81, 84];
+      return [
+        (step, when) => {
+          if (step % 4 === 0 && Math.random() < 0.55)
+            s.mnote(when, {
+              type: 'triangle',
+              f: midi(scale[Math.floor(Math.random() * scale.length)]),
+              dur: 1.4,
+              vol: 0.04,
+              detune: (Math.random() - 0.5) * 40,
+              wet: 0.85,
+            });
+          if (step % 64 === 0) s.mnote(when, { type: 'sine', f: 55, f2: 30, dur: 2.5, vol: 0.2, wet: 0.5 });
+        },
+      ];
+    },
+  },
+};
+
 export const sfx = new Sfx();
 
 let vibrationOn = true;
 export const setVibration = (on: boolean) => (vibrationOn = on);
 export function haptic(pattern: number | number[]) {
-  if (vibrationOn && 'vibrate' in navigator) navigator.vibrate(pattern);
+  // El navegador ignora (y reporta error) si nadie ha tocado la pantalla todavía.
+  const touched = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive ?? true;
+  if (vibrationOn && touched && 'vibrate' in navigator) navigator.vibrate(pattern);
 }

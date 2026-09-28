@@ -63,7 +63,7 @@ export function MiniCard({
             {label}
           </div>
         )}
-        <div className={`display ${c.horror ? 'horror-font' : ''}`} style={{ fontSize: 22, lineHeight: 0.95 }}>
+        <div className={`display ${c.horror && cat !== 'scp' ? 'horror-font' : ''}`} style={{ fontSize: 22, lineHeight: 0.95 }}>
           {item ? item.name : '??? (sin carta)'}
         </div>
       </div>

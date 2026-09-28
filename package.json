@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "validate-wiki": "tsx scripts/validate-wiki.ts"
+    "validate-wiki": "tsx scripts/validate-wiki.ts",
+    "jugar": "vite build && vite preview --host --port 4173"
   },
   "dependencies": {
     "framer-motion": "^13.4.4",

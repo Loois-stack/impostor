@@ -1,4 +1,4 @@
-import { CHALLENGES, type Challenge } from '../data/challenges';
+import { CHALLENGES, type Challenge, type ChallengeKind } from '../data/challenges';
 import type { Rng } from './rng';
 
 export interface ChallengeState {
@@ -22,12 +22,15 @@ export function maybeChallenge(
   last: Record<string, number>,
   round: number,
   rng: Rng,
+  /** Tipos de reto que ya salieron esta ronda: se vuelven poco probables para variar. */
+  usedKinds: ChallengeKind[] = [],
 ): Challenge | null {
   if (st.given.includes(player) || st.given.length >= st.max) return null;
   if (!rng.chance(challengeChance(st.sinceLast))) return null;
   return rng.weighted(CHALLENGES, (c) => {
     const l = last[c.id];
     const fresh = l === undefined ? 1.2 : 1 - Math.exp(-(round - l) / 8);
-    return fresh * (c.kind === 'traicion' ? 0.8 : 1);
+    const repeat = usedKinds.filter((k) => k === c.kind).length;
+    return fresh * (c.kind === 'traicion' ? 0.8 : 1) * Math.pow(0.2, repeat);
   });
 }

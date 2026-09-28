@@ -2,17 +2,18 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { CATEGORIES, HORROR_CATS } from '../data/categories';
 import { CHALLENGES } from '../data/challenges';
-import type { CategoryId, Level } from '../data/types';
+import { CUSTOM_GROUP, playable, setCustomItems } from '../data';
+import type { CategoryId, Item, Level } from '../data/types';
 import { ACHIEVEMENTS, emptyStats, type Stats } from '../engine/achievements';
 import { maybeChallenge, type ChallengeState } from '../engine/challenges';
 import { CURSED_WORDS, rollEvent, type EventId } from '../engine/events';
 import { makeRng } from '../engine/rng';
 import { pickImpostors, turnOrder } from '../engine/roles';
 import { levelFromXp, scoreRound, streakMult, type ScoreLine, type Winner } from '../engine/scoring';
-import { commitRound, emptyHistory, pickCategory, pickCivil, pickDecoy, type History, type Similarity } from '../engine/selector';
+import { commitRound, emptyHistory, pickCategory, pickCivil, pickDecoy, pickFromTheme, pickTheme, type History, type Similarity } from '../engine/selector';
 
 export type Screen =
-  | 'home' | 'players' | 'setup' | 'intro' | 'deal' | 'discuss' | 'vote' | 'reveal' | 'score' | 'settings' | 'howto';
+  | 'home' | 'players' | 'setup' | 'intro' | 'deal' | 'discuss' | 'vote' | 'reveal' | 'score' | 'settings' | 'howto' | 'custom' | 'awards';
 
 export interface Player {
   id: string;
@@ -27,16 +28,33 @@ export interface Profile {
   achievements: string[];
 }
 
+export interface CustomCard {
+  id: string;
+  name: string;
+  ctx: string;
+  emoji: string;
+  img?: string;
+}
+
 export interface Settings {
   cats: CategoryId[];
   similarity: Similarity;
   mode: 'similar' | 'classic';
   impostors: 1 | 2;
-  laps: 1 | 2 | 3;
+  /** 0 = vueltas infinitas (se juega hasta que acabe el tiempo o decidan votar). */
+  laps: 0 | 1 | 2 | 3;
+  /** Segundos por turno (0 = libre). */
   timer: 0 | 20 | 30 | 45;
+  /** Duración total de la ronda de pistas en segundos (0 = sin límite). */
+  roundTime: 0 | 120 | 180 | 300 | 480;
+  /** Modo Mezcla: temas que cruzan categorías. 'mixed' = a veces. */
+  mix: 'off' | 'on' | 'mixed';
+  /** Si votan a un inocente, sale y la ronda sigue hasta atrapar al impostor o quedar 2. */
+  elimination: boolean;
   challenges: boolean;
   events: boolean;
   sound: boolean;
+  music: boolean;
   vibration: boolean;
 }
 
@@ -56,8 +74,18 @@ export interface Round {
   order: string[];
   laps: number;
   timer: number;
+  roundTime: number;
+  /** Cuándo empezó la ronda de pistas (ms). */
+  startedAt?: number;
+  /** Modo Mezcla: id del tema de la ronda. */
+  theme?: string;
   event?: EventId;
   cursedWord?: string;
+  /** Evento "cómplice": civil que conoce al impostor y juega de su lado. */
+  accomplice?: string;
+  /** Evento "detective": civil que sabe que `detectiveKnows` es inocente. */
+  detective?: string;
+  detectiveKnows?: string;
   dealIdx: number;
   lap: number;
   turn: number;
@@ -65,7 +93,12 @@ export interface Round {
   /** jugador -> id de reto */
   challenges: Record<string, string>;
   pendingChallenge?: string;
+  /** Todos los acusados/eliminados de la ronda (acumulado). */
   accused: string[];
+  /** Acusados en la última votación. */
+  lastVote?: string[];
+  /** Modo eliminación activo en esta ronda. */
+  elimination: boolean;
   nobodyVote: boolean;
   guessed: Record<string, boolean>;
   challengeResults: Record<string, boolean>;
@@ -73,14 +106,26 @@ export interface Round {
   result?: { winner: Winner; lines: ResultLine[]; levelUps: string[]; newAch: { player: string; ach: string }[] };
 }
 
+export interface SessionStat {
+  accused: number;
+  impWins: number;
+  civWins: number;
+  challenges: number;
+  cursed: number;
+  allyWins: number;
+}
+
 export interface Session {
   round: number;
+  stats: Record<string, SessionStat>;
   scores: Record<string, number>;
   impCounts: Record<string, number>;
   streaks: Record<string, number>;
   lastImpostors: string[];
   lastStarter?: string;
   lastEvent?: EventId;
+  /** Quien sostiene el teléfono y toca "Siguiente" durante las pistas. */
+  moderator?: string;
 }
 
 interface State {
@@ -91,6 +136,7 @@ interface State {
   history: History;
   session: Session;
   round: Round | null;
+  customCards: CustomCard[];
 
   go(screen: Screen): void;
   addPlayer(name: string): void;
@@ -108,6 +154,10 @@ interface State {
   setChallengeResult(player: string, ok: boolean): void;
   finishRound(): void;
   clearHistory(): void;
+  setModerator(id: string): void;
+  continueRound(): void;
+  saveCustom(card: CustomCard): void;
+  removeCustom(id: string): void;
 }
 
 export const PLAYER_COLORS = [
@@ -116,28 +166,85 @@ export const PLAYER_COLORS = [
 ];
 export const AVATARS = ['🦊', '🐸', '👽', '🤖', '🐙', '👻', '🦄', '🐼', '🦖', '🐯', '🧟', '🐵', '🦉', '🐺', '🤡'];
 
-const emptySession = (): Session => ({ round: 0, scores: {}, impCounts: {}, streaks: {}, lastImpostors: [] });
+const emptySession = (): Session => ({ round: 0, stats: {}, scores: {}, impCounts: {}, streaks: {}, lastImpostors: [] });
+const emptySessionStat = (): SessionStat => ({ accused: 0, impWins: 0, civWins: 0, challenges: 0, cursed: 0, allyWins: 0 });
+
+const toItem = (c: CustomCard): Item => ({
+  id: c.id,
+  name: c.name,
+  cat: 'custom',
+  group: CUSTOM_GROUP,
+  emoji: c.emoji || '✍️',
+  wiki: '',
+  ctx: c.ctx || 'Carta creada por ustedes.',
+  sim: [],
+  img: c.img,
+});
+const syncCustom = (cards: CustomCard[]) => setCustomItems(cards.map(toItem));
 
 const defaultSettings: Settings = {
   cats: CATEGORIES.map((c) => c.id),
   similarity: 'mixed',
   mode: 'similar',
   impostors: 1,
-  laps: 2,
+  laps: 0,
   timer: 0,
+  roundTime: 180,
+  mix: 'off',
+  elimination: true,
   challenges: true,
   events: true,
   sound: true,
+  music: true,
   vibration: true,
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+export interface RoundStatus {
+  alive: string[];
+  aliveImps: number;
+  aliveCivs: number;
+  /** La ronda terminó (se revela todo y se puntúa). */
+  over: boolean;
+  /** Terminó porque los impostores igualaron a los civiles vivos. */
+  impParity: boolean;
+}
+
+/** Quién sigue en juego y si la ronda ya terminó. */
+export function roundStatus(r: Round): RoundStatus {
+  const alive = r.order.filter((id) => !r.accused.includes(id));
+  const aliveImps = alive.filter((id) => r.impostors.includes(id)).length;
+  const aliveCivs = alive.length - aliveImps;
+  const impParity = r.impostors.length > 0 && aliveImps > 0 && aliveImps >= aliveCivs;
+  const over =
+    !r.elimination ||
+    r.nobodyVote ||
+    (r.impostors.length > 0 && aliveImps === 0) ||
+    impParity ||
+    (r.impostors.length === 0 && alive.length <= 2);
+  return { alive, aliveImps, aliveCivs, over, impParity };
+}
+
+/** Siguiente turno a partir de (lap, turn) saltando eliminados. */
+function advance(r: Round, lap: number, turn: number): { lap: number; turn: number } {
+  for (let i = 0; i < r.order.length; i++) {
+    turn++;
+    if (turn >= r.order.length) {
+      turn = 0;
+      lap++;
+    }
+    if (!r.accused.includes(r.order[turn])) break;
+  }
+  return { lap, turn };
+}
+
 /** Tira el dado de reto para quien empieza turno. */
 function rollTurnChallenge(r: Round, h: History, enabled: boolean): { r: Round; h: History } {
   if (!enabled) return { r, h };
   const player = r.order[r.turn];
-  const c = maybeChallenge(player, r.ch, h.challengeLast, h.round, makeRng());
+  const usedKinds = Object.values(r.challenges).map((id) => CHALLENGES.find((c) => c.id === id)!.kind);
+  const c = maybeChallenge(player, r.ch, h.challengeLast, h.round, makeRng(), usedKinds);
   if (!c) {
     if (!r.ch.given.includes(player)) r = { ...r, ch: { ...r.ch, sinceLast: r.ch.sinceLast + 1 } };
     return { r, h };
@@ -163,6 +270,7 @@ export const useGame = create<State>()(
       history: emptyHistory(),
       session: emptySession(),
       round: null,
+      customCards: [],
 
       go: (screen) => set({ screen }),
 
@@ -201,7 +309,8 @@ export const useGame = create<State>()(
         let { history } = get();
         const rng = makeRng();
         const ids = players.map((p) => p.id);
-        const allowed = settings.cats.length ? settings.cats : CATEGORIES.map((c) => c.id);
+        const chosen = settings.cats.filter(playable);
+        const allowed = chosen.length ? chosen : CATEGORIES.map((c) => c.id);
         const horror = allowed.filter((c) => HORROR_CATS.includes(c));
         const maxImp = Math.min(settings.impostors, Math.max(1, ids.length - 2));
         const event = rollEvent(
@@ -216,14 +325,28 @@ export const useGame = create<State>()(
           rng,
         );
 
-        const cat = pickCategory(event === 'terror' ? horror : allowed, history, rng);
-        const civil = pickCivil(cat, history, rng);
         const impCount = event === 'nobody' ? 0 : event === 'double' ? 2 : maxImp;
         const needsDecoy = impCount > 0 && (settings.mode === 'similar' || event === 'blind');
-        const d = needsDecoy ? pickDecoy(civil, settings.similarity, history, rng) : null;
+        const mixRound = event !== 'terror' && (settings.mix === 'on' || (settings.mix === 'mixed' && rng.chance(0.35)));
+        const theme = mixRound ? pickTheme(history, rng) : undefined;
+        let civil;
+        let d: { decoy: ReturnType<typeof pickCivil>; level: Level } | null;
+        if (theme) {
+          const pick = pickFromTheme(theme, history, rng);
+          civil = pick.civil;
+          d = needsDecoy ? { decoy: pick.decoy, level: pick.level } : null;
+        } else {
+          civil = pickCivil(pickCategory(event === 'terror' ? horror : allowed, history, rng), history, rng);
+          d = needsDecoy ? pickDecoy(civil, settings.similarity, history, rng) : null;
+        }
+        const cat = civil.cat;
         const impostors = pickImpostors(ids, impCount, session.impCounts, session.lastImpostors, rng);
         const order = turnOrder(ids, impostors, session.lastStarter, rng);
-        history = commitRound(history, cat, civil, d?.decoy ?? null);
+        const civilians = ids.filter((id) => !impostors.includes(id));
+        const accomplice = event === 'accomplice' && civilians.length > 1 ? rng.pick(civilians) : undefined;
+        const detective = event === 'detective' && civilians.length > 1 ? rng.pick(civilians) : undefined;
+        const detectiveKnows = detective ? rng.pick(civilians.filter((id) => id !== detective)) : undefined;
+        history = commitRound(history, cat, civil, d?.decoy ?? null, theme?.id);
 
         const round: Round = {
           n: session.round + 1,
@@ -235,14 +358,20 @@ export const useGame = create<State>()(
           order,
           laps: event === 'sudden' ? 1 : settings.laps,
           timer: event === 'sudden' ? 10 : settings.timer,
+          roundTime: event === 'sudden' ? 60 : settings.roundTime,
+          theme: theme?.id,
           event,
           cursedWord: event === 'cursed' ? rng.pick(CURSED_WORDS) : undefined,
+          accomplice,
+          detective,
+          detectiveKnows,
           dealIdx: 0,
           lap: 1,
           turn: 0,
           ch: { given: [], sinceLast: 0, max: Math.ceil(ids.length / 2) },
           challenges: {},
           accused: [],
+          elimination: settings.elimination,
           nobodyVote: false,
           guessed: {},
           challengeResults: {},
@@ -256,20 +385,15 @@ export const useGame = create<State>()(
         if (!round) return;
         const dealIdx = round.dealIdx + 1;
         if (dealIdx < players.length) return set({ round: { ...round, dealIdx } });
-        const { r, h } = rollTurnChallenge({ ...round, dealIdx }, history, settings.challenges);
+        const { r, h } = rollTurnChallenge({ ...round, dealIdx, startedAt: Date.now() }, history, settings.challenges);
         set({ round: r, history: h, screen: 'discuss' });
       },
 
       nextTurn() {
         const { round, history, settings } = get();
         if (!round) return;
-        let { lap, turn } = round;
-        turn++;
-        if (turn >= round.order.length) {
-          turn = 0;
-          lap++;
-        }
-        if (lap > round.laps) return set({ round: { ...round, pendingChallenge: undefined }, screen: 'vote' });
+        const { lap, turn } = advance(round, round.lap, round.turn);
+        if (round.laps > 0 && lap > round.laps) return set({ round: { ...round, pendingChallenge: undefined }, screen: 'vote' });
         const { r, h } = rollTurnChallenge({ ...round, lap, turn, pendingChallenge: undefined }, history, settings.challenges);
         set({ round: r, history: h });
       },
@@ -288,7 +412,18 @@ export const useGame = create<State>()(
 
       vote(accused, nobody) {
         const { round } = get();
-        if (round) set({ round: { ...round, accused, nobodyVote: nobody }, screen: 'reveal' });
+        if (round)
+          set({ round: { ...round, accused: [...round.accused, ...accused], lastVote: accused, nobodyVote: nobody }, screen: 'reveal' });
+      },
+
+      continueRound() {
+        const { round, history, settings } = get();
+        if (!round) return;
+        // Nueva ronda de pistas con los que quedan: vuelve a empezar la vuelta y el reloj.
+        const start = advance(round, 1, -1);
+        const next: Round = { ...round, lap: 1, turn: start.turn, lastVote: undefined, startedAt: Date.now(), pendingChallenge: undefined };
+        const { r, h } = rollTurnChallenge(next, history, settings.challenges);
+        set({ round: r, history: h, screen: 'discuss' });
       },
 
       setGuess(imp, ok) {
@@ -314,12 +449,14 @@ export const useGame = create<State>()(
           challenges: round.challengeResults,
           cursed: round.cursed,
           event: round.event,
+          accomplice: round.accomplice,
         });
 
         const scores = { ...session.scores };
         const streaks = { ...session.streaks };
         const impCounts = { ...session.impCounts };
         const nextProfiles = { ...profiles };
+        const stats = { ...session.stats };
         const levelUps: string[] = [];
         const newAch: { player: string; ach: string }[] = [];
 
@@ -356,6 +493,15 @@ export const useGame = create<State>()(
               newAch.push({ player: l.player, ach: a.id });
             }
           nextProfiles[l.player] = { xp, stats: s, achievements };
+
+          const ss = { ...(stats[l.player] ?? emptySessionStat()) };
+          if (caught) ss.accused++;
+          if (isImp && (!caught || round.nobodyVote)) ss.impWins++;
+          if (!isImp && l.player !== round.accomplice && (winner === 'civ' || winner === 'partial' || winner === 'nobody-found')) ss.civWins++;
+          if (l.player === round.accomplice && l.base > 0) ss.allyWins++;
+          if (round.challengeResults[l.player]) ss.challenges++;
+          if (round.cursed.includes(l.player)) ss.cursed++;
+          stats[l.player] = ss;
           return { ...l, mult, total, streak };
         });
 
@@ -364,12 +510,14 @@ export const useGame = create<State>()(
           profiles: nextProfiles,
           session: {
             round: session.round + 1,
+            stats,
             scores,
             streaks,
             impCounts,
             lastImpostors: round.impostors,
             lastStarter: round.order[0],
             lastEvent: round.event,
+            moderator: session.moderator,
           },
           round: { ...round, result: { winner, lines: result, levelUps, newAch } },
           screen: 'score',
@@ -377,6 +525,26 @@ export const useGame = create<State>()(
       },
 
       clearHistory: () => set({ history: emptyHistory() }),
+
+      setModerator(id) {
+        const { round, session } = get();
+        // Si se elige al inicio de la ronda, el reloj arranca desde ese momento.
+        const fresh = round && round.lap === 1 && round.turn === 0 && !round.result;
+        set({ session: { ...session, moderator: id }, round: fresh ? { ...round, startedAt: Date.now() } : round });
+      },
+
+      saveCustom(card) {
+        const list = get().customCards;
+        const customCards = list.some((c) => c.id === card.id) ? list.map((c) => (c.id === card.id ? card : c)) : [...list, card];
+        syncCustom(customCards);
+        set({ customCards });
+      },
+
+      removeCustom(id) {
+        const customCards = get().customCards.filter((c) => c.id !== id);
+        syncCustom(customCards);
+        set({ customCards });
+      },
     }),
     {
       name: 'impostor-v1',
@@ -389,10 +557,19 @@ export const useGame = create<State>()(
         history: s.history,
         session: s.session,
         round: s.round,
+        customCards: s.customCards,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<State>;
-        return { ...current, ...p, settings: { ...defaultSettings, ...p.settings } };
+        syncCustom(p.customCards ?? []);
+        if (p.round && p.round.elimination === undefined) p.round = { ...p.round, elimination: false };
+        return {
+          ...current,
+          ...p,
+          settings: { ...defaultSettings, ...p.settings },
+          session: { ...emptySession(), ...p.session },
+          history: { ...emptyHistory(), ...p.history },
+        };
       },
     },
   ),

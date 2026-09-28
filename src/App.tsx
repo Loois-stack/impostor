@@ -1,10 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, type CSSProperties } from 'react';
-import { setVibration, sfx } from './audio/sfx';
+import { setVibration, sfx, type MusicMood } from './audio/sfx';
 import { screenAnim } from './components/ui';
 import { CAT } from './data/categories';
+import { THEME_BY_ID } from './data/themes';
 import { Backdrop, type Mood } from './fx/Backdrop';
 import { FxLayer } from './fx/fx';
+import { Awards } from './screens/Awards';
+import { Custom } from './screens/Custom';
 import { Deal } from './screens/Deal';
 import { Discuss } from './screens/Discuss';
 import { Home } from './screens/Home';
@@ -30,6 +33,8 @@ const SCREENS: Record<Screen, () => React.JSX.Element | null> = {
   score: Score,
   settings: SettingsScreen,
   howto: HowTo,
+  custom: Custom,
+  awards: Awards,
 };
 
 const IN_ROUND: Screen[] = ['intro', 'deal', 'discuss', 'vote', 'reveal'];
@@ -39,11 +44,14 @@ export function App() {
   const round = useGame((s) => s.round);
   const sound = useGame((s) => s.settings.sound);
   const vibration = useGame((s) => s.settings.vibration);
+  const music = useGame((s) => s.settings.music);
 
   useEffect(() => {
     sfx.enabled = sound;
+    sfx.musicOn = music;
     if (!sound) sfx.stopDrone();
-  }, [sound]);
+    sfx.applyMusic();
+  }, [sound, music]);
   useEffect(() => {
     setVibration(vibration);
   }, [vibration]);
@@ -56,7 +64,10 @@ export function App() {
   }, []);
 
   // En la ruleta no se tiñe el fondo: delataría la categoría antes de que aterrice.
-  const cat = round && IN_ROUND.includes(screen) && screen !== 'intro' ? CAT[round.cat] : null;
+  const showCat = round && IN_ROUND.includes(screen) && screen !== 'intro';
+  const theme = showCat && round.theme ? THEME_BY_ID[round.theme] : undefined;
+  // En Mezcla los colores y el ambiente dependen del tema, nunca de la carta civil (delataría su categoría).
+  const cat = !showCat ? null : theme ? { color: theme.color, color2: '#2a1a4a', horror: !!theme.horror } : CAT[round.cat];
   const horror = !!cat?.horror || round?.event === 'terror';
   const inRound = IN_ROUND.includes(screen);
 
@@ -66,6 +77,13 @@ export function App() {
   }, [horror, inRound, screen]);
 
   const mood: Mood = screen === 'vote' ? 'danger' : horror && inRound ? 'horror' : 'calm';
+
+  // Pista musical según la fase. En la ruleta y la revelación manda el efecto dramático.
+  const musicMood: MusicMood | null =
+    screen === 'intro' || screen === 'reveal' ? null : screen === 'vote' ? 'tension' : inRound ? (horror ? 'horror' : 'game') : 'menu';
+  useEffect(() => {
+    sfx.setMusic(musicMood);
+  }, [musicMood]);
   const Current = SCREENS[screen] ?? Home;
 
   return (

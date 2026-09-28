@@ -1,11 +1,43 @@
 import { defineConfig } from 'vitest/config';
+import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+
+/**
+ * Política de seguridad (solo en la versión publicada; en desarrollo Vite necesita scripts en línea).
+ * Solo se ejecuta código propio; las imágenes vienen únicamente de Wikimedia; sin formularios ni iframes.
+ */
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org",
+  "connect-src 'self' https://upload.wikimedia.org https://thumb.wikimedia.org https://fonts.googleapis.com https://fonts.gstatic.com",
+  "manifest-src 'self'",
+  "worker-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'",
+].join('; ');
+
+const securityHeaders = (): Plugin => ({
+  name: 'security-meta',
+  apply: 'build',
+  transformIndexHtml: (html) =>
+    html.replace(
+      '<meta charset="UTF-8" />',
+      `<meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="${CSP}" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />`,
+    ),
+});
 
 export default defineConfig({
   base: './',
   plugins: [
     react(),
+    securityHeaders(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
@@ -39,7 +71,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /^https:\/\/upload\.wikimedia\.org\/.*/i,
+            urlPattern: /^https:\/\/(upload|thumb)\.wikimedia\.org\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'wiki-img',

@@ -18,7 +18,17 @@ export const CATEGORIES: Category[] = [
   { id: 'animals', name: 'Animales', emoji: '🦊', color: '#8ce99a', color2: '#1971c2', tagline: 'Reino animal' },
 ];
 
-export const CAT: Record<CategoryId, Category> = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<
+/** Categoría con las cartas que crean los jugadores ("Mis cartas"). */
+export const CUSTOM_CAT: Category = {
+  id: 'custom',
+  name: 'Mis cartas',
+  emoji: '✍️',
+  color: '#ff9ad5',
+  color2: '#7a1fff',
+  tagline: 'Hechas por ustedes',
+};
+
+export const CAT: Record<CategoryId, Category> = Object.fromEntries([...CATEGORIES, CUSTOM_CAT].map((c) => [c.id, c])) as Record<
   CategoryId,
   Category
 >;

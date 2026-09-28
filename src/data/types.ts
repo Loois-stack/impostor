@@ -13,7 +13,8 @@ export type CategoryId =
   | 'famous'
   | 'objects'
   | 'food'
-  | 'animals';
+  | 'animals'
+  | 'custom';
 
 /** 1 = casi idéntico (el impostor se camufla), 2 = parecido, 3 = relacionado lejano (tiene que jugársela). */
 export type Level = 1 | 2 | 3;
@@ -38,6 +39,8 @@ export interface Item {
   wiki: string;
   ctx: string;
   sim: { id: string; level: Level }[];
+  /** Foto propia (data URL) de las cartas creadas por los jugadores. */
+  img?: string;
 }
 
 /** [id, nombre, grupo, emoji, wiki, contexto, similares "id:nivel,id:nivel"] */

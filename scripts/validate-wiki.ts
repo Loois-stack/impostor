@@ -5,6 +5,7 @@
  */
 import { writeFileSync } from 'node:fs';
 import { ITEMS } from '../src/data';
+import { IMAGE_BLOCKLIST } from '../src/data/image-blocklist';
 
 type Lang = 'en' | 'es';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -63,7 +64,7 @@ async function main() {
   const missing: string[] = [];
   const noWiki: string[] = [];
   for (const it of ITEMS) {
-    if (!it.wiki) {
+    if (!it.wiki || IMAGE_BLOCKLIST.has(it.id)) {
       noWiki.push(it.id);
       continue;
     }

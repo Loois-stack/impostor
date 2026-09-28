@@ -2,9 +2,13 @@
 
 Juego de fiesta para jugar pasando **un solo celular**. Todos reciben la misma carta… menos el impostor, que recibe algo **parecido pero no igual**.
 
-- 517 cartas en 15 categorías (memes, creepypastas, SCP, terror, caricaturas, anime, videojuegos, cine, series, famosos, objetos, comida, animales…), cada una con imagen y contexto.
+- 836 cartas en 15 categorías (memes, creepypastas, SCP, terror, caricaturas, anime, videojuegos, cine, series, famosos, objetos, comida, animales…), cada una con imagen y contexto.
+- "Mis cartas": crea tus propias cartas con foto desde la app.
 - Algoritmo anti-repetición persistente: una carta no vuelve hasta recorrer ~70 % de su categoría y ninguna pareja civil/impostor se repite.
-- Retos activables (voz ridícula, traición secreta, restricciones, mímica, caos) y eventos sorpresa.
+- 76 retos activables (voz ridícula, traición secreta, restricciones, mímica, caos) y 9 eventos sorpresa (cómplice, detective, doble impostor, impostor a ciegas…).
+- Música de fondo generada en vivo y "Premios de la noche" al terminar.
+- Modo Mezcla: 28 temas que cruzan categorías (Payasos, Robots, Calvos legendarios…).
+- Reloj de ronda, encargado del teléfono y animación de barajeo antes de repartir.
 - Puntos, rachas, niveles y logros por jugador.
 - App instalable (PWA), pantalla completa y offline.
 
@@ -14,6 +18,14 @@ Juego de fiesta para jugar pasando **un solo celular**. Todos reciben la misma c
 npm install
 npm run dev
 ```
+
+## Jugar en tu celular por Wi-Fi (sin publicar)
+
+```bash
+npm run jugar
+```
+
+Abre en el celular (conectado al mismo Wi-Fi) la dirección `http://IP-DE-TU-PC:4173`. Si Windows pregunta por el firewall, permite el acceso en **redes privadas**. Así se juega completo, pero no se instala como app ni funciona sin la PC encendida.
 
 ## Publicar e instalar en el celular
 

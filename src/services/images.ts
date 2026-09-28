@@ -4,7 +4,7 @@ import type { Item } from '../data/types';
 const map = IMAGES as Record<string, string>;
 
 /** URL de la imagen de Wikipedia (resuelta al compilar con `npm run validate-wiki`) o null si usa arte propio. */
-export const imageFor = (item: Item): string | null => map[item.id] ?? null;
+export const imageFor = (item: Item): string | null => item.img ?? map[item.id] ?? null;
 
 const preloaded = new Set<string>();
 export function preload(items: (Item | undefined | null)[]) {

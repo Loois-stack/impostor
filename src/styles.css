@@ -700,3 +700,73 @@ input {
 .mini-art .dossier .stamp {
   font-size: 16px;
 }
+
+/* Arte propio por categoría (cartas sin foto) */
+.pat {
+  position: absolute;
+  inset: 0;
+}
+.pat-halftone {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 1.6px, transparent 2.2px) 0 0 / 11px 11px;
+  -webkit-mask-image: linear-gradient(135deg, #000 10%, transparent 75%);
+  mask-image: linear-gradient(135deg, #000 10%, transparent 75%);
+}
+.pat-pixel {
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.28) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.28) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 4px);
+}
+.pat-film {
+  background: repeating-linear-gradient(180deg, transparent 0 9px, rgba(255, 255, 255, 0.55) 9px 17px) left 5px top 0 / 9px 100% no-repeat,
+    repeating-linear-gradient(180deg, transparent 0 9px, rgba(255, 255, 255, 0.55) 9px 17px) right 5px top 0 / 9px 100% no-repeat,
+    linear-gradient(90deg, #000 0 19px, transparent 19px calc(100% - 19px), #000 calc(100% - 19px));
+}
+.pat-scratch {
+  background: repeating-linear-gradient(104deg, transparent 0 26px, rgba(255, 40, 70, 0.12) 26px 27px),
+    repeating-linear-gradient(76deg, transparent 0 41px, rgba(255, 255, 255, 0.06) 41px 42px),
+    radial-gradient(ellipse at 50% 110%, rgba(200, 0, 30, 0.55), transparent 60%);
+  animation: flicker 3.5s infinite steps(1);
+}
+.pat-speed {
+  background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(255, 255, 255, 0.16) 0 1.2deg, transparent 1.2deg 7deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 18%, #000 60%);
+  mask-image: radial-gradient(circle, transparent 18%, #000 60%);
+}
+.pat-spot {
+  background: conic-gradient(from 160deg at 50% -10%, transparent 0deg, rgba(255, 240, 200, 0.28) 14deg, transparent 28deg),
+    conic-gradient(from 180deg at 20% -10%, transparent 0deg, rgba(255, 255, 255, 0.12) 10deg, transparent 20deg),
+    conic-gradient(from 175deg at 80% -10%, transparent 0deg, rgba(255, 255, 255, 0.12) 10deg, transparent 20deg);
+}
+.pat-bokeh {
+  background: radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.22) 0 18px, transparent 20px),
+    radial-gradient(circle at 78% 22%, rgba(255, 255, 255, 0.14) 0 28px, transparent 30px),
+    radial-gradient(circle at 70% 75%, rgba(255, 255, 255, 0.12) 0 14px, transparent 16px),
+    radial-gradient(circle at 30% 80%, rgba(255, 255, 255, 0.1) 0 24px, transparent 26px);
+  filter: blur(2px);
+  animation: float 6s ease-in-out infinite;
+}
+.watermark {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  bottom: 16%;
+  font-family: var(--display);
+  font-size: 64px;
+  line-height: 0.85;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.06);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  transform: rotate(-8deg);
+  pointer-events: none;
+}
+.mini-art .watermark {
+  font-size: 30px;
+}
+@keyframes flicker {
+  0%, 92%, 100% { opacity: 1; }
+  93% { opacity: 0.4; }
+  95% { opacity: 1; }
+  97% { opacity: 0.6; }
+}

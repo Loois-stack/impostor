@@ -37,6 +37,22 @@ export const BY_CAT = ITEMS.reduce(
 
 const BY_GROUP = ITEMS.reduce((acc, it) => ((acc[it.group] ??= []).push(it), acc), {} as Record<string, Item[]>);
 
+export const CUSTOM_GROUP = 'custom.mis';
+export const MIN_CUSTOM = 3;
+
+/** Reemplaza las cartas creadas por los jugadores (categoría "Mis cartas"). */
+export function setCustomItems(items: Item[]) {
+  for (let i = ITEMS.length - 1; i >= 0; i--) if (ITEMS[i].cat === 'custom') ITEMS.splice(i, 1);
+  for (const id of Object.keys(BY_ID)) if (BY_ID[id].cat === 'custom') delete BY_ID[id];
+  ITEMS.push(...items);
+  for (const it of items) BY_ID[it.id] = it;
+  BY_CAT.custom = [...items];
+  BY_GROUP[CUSTOM_GROUP] = [...items];
+}
+
+/** Una categoría se puede jugar si tiene al menos 3 cartas (1 civil + señuelos). */
+export const playable = (cat: CategoryId) => (BY_CAT[cat]?.length ?? 0) >= MIN_CUSTOM;
+
 /** Candidatos a señuelo agrupados por nivel de similitud. */
 export function decoyCandidates(item: Item): Record<Level, Item[]> {
   const out: Record<Level, Item[]> = { 1: [], 2: [], 3: [] };
@@ -49,8 +65,8 @@ export function decoyCandidates(item: Item): Record<Level, Item[]> {
   };
   for (const s of item.sim) if (s.level === 1) add(1, BY_ID[s.id]);
   for (const s of item.sim) if (s.level === 2) add(2, BY_ID[s.id]);
-  for (const it of BY_GROUP[item.group]) add(2, it);
+  for (const it of BY_GROUP[item.group] ?? []) add(2, it);
   for (const s of item.sim) if (s.level === 3) add(3, BY_ID[s.id]);
-  for (const it of BY_CAT[item.cat]) add(3, it);
+  for (const it of BY_CAT[item.cat] ?? []) add(3, it);
   return out;
 }

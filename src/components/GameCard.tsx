@@ -7,6 +7,26 @@ import { Glitch } from './ui';
 
 export type CardRole = 'civil' | 'imp' | 'imp-classic' | 'plain';
 
+/** Estilo del arte propio (cartas sin foto) según la categoría. */
+const PATTERN: Record<CategoryId, string> = {
+  memes: 'halftone',
+  creepy: 'scratch',
+  scp: 'rays',
+  horror: 'scratch',
+  cartoons: 'halftone',
+  animated: 'bokeh',
+  anime: 'speed',
+  movies: 'film',
+  heroes: 'speed',
+  games: 'pixel',
+  series: 'film',
+  famous: 'spot',
+  objects: 'bokeh',
+  food: 'bokeh',
+  animals: 'bokeh',
+  custom: 'bokeh',
+};
+
 export function CardArt({ item, cat }: { item: Item | null; cat: CategoryId }) {
   const c = CAT[cat];
   const url = item ? imageFor(item) : null;
@@ -20,8 +40,13 @@ export function CardArt({ item, cat }: { item: Item | null; cat: CategoryId }) {
     <div className="card-art" style={style}>
       {(!url || failed || !loaded) && (
         <>
-          <div className="rays" />
-          <div className="fallback">{item ? item.emoji : '❓'}</div>
+          {PATTERN[cat] === 'rays' ? <div className="rays" /> : <div className={`pat pat-${PATTERN[cat]}`} />}
+          <div className="watermark">{item?.name ?? '???'}</div>
+          <div className="fallback" style={{ filter: `drop-shadow(0 0 28px ${c.color}aa) drop-shadow(0 12px 24px rgba(0,0,0,.5))` }}>
+            <span className="float" style={{ display: 'inline-block' }}>
+              {item ? item.emoji : '❓'}
+            </span>
+          </div>
         </>
       )}
       {url && !failed && (
@@ -65,7 +90,25 @@ function Dossier({ item }: { item: Item }) {
   );
 }
 
-export function CardFront({ item, cat, role }: { item: Item | null; cat: CategoryId; role: CardRole }) {
+export interface CardNote {
+  kind: 'accomplice' | 'detective';
+  text: string;
+}
+
+export function CardFront({
+  item,
+  cat,
+  role,
+  note,
+  topic,
+}: {
+  item: Item | null;
+  cat: CategoryId;
+  role: CardRole;
+  note?: CardNote;
+  /** Tema de la ronda en modo Mezcla. */
+  topic?: string;
+}) {
   const c = CAT[cat];
   return (
     <>
@@ -81,7 +124,13 @@ export function CardFront({ item, cat, role }: { item: Item | null; cat: Categor
           {role === 'imp-classic' ? '???' : item?.name}
         </div>
         {role !== 'imp-classic' && item && <div className="card-ctx">{item.ctx}</div>}
-        {role === 'civil' && (
+        {note && (
+          <div className={`role-banner ${note.kind === 'accomplice' ? 'imp' : 'civil'}`} style={{ background: note.kind === 'accomplice' ? 'rgba(255,138,61,.18)' : 'rgba(57,255,136,.14)', borderColor: note.kind === 'accomplice' ? '#ff8a3d' : '#39ff88', color: '#fff' }}>
+            <b>{note.kind === 'accomplice' ? '🤝 Eres el cómplice' : '🔎 Eres el detective'}</b>
+            {note.text}
+          </div>
+        )}
+        {role === 'civil' && !note && (
           <div className="role-banner civil">
             <b>🛡️ Eres civil</b>
             Defiende esta carta. El impostor tiene algo <u>parecido</u>.
@@ -100,8 +149,8 @@ export function CardFront({ item, cat, role }: { item: Item | null; cat: Categor
             <b>
               <Glitch text="🔪 Eres el impostor" hard />
             </b>
-            No sabes la carta. Solo conoces la categoría: <b style={{ display: 'inline', fontSize: 'inherit', fontFamily: 'inherit' }}>{c.name}</b>. Escucha,
-            imita y sobrevive.
+            No sabes la carta. Solo conoces {topic ? 'el tema' : 'la categoría'}:{' '}
+            <b style={{ display: 'inline', fontSize: 'inherit', fontFamily: 'inherit' }}>{topic ?? c.name}</b>. Escucha, imita y sobrevive.
           </div>
         )}
       </div>

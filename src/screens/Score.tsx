@@ -26,7 +26,7 @@ function CountUp({ to, delay }: { to: number; delay: number }) {
 
 export function Score() {
   const round = useGame((s) => s.round);
-  const { players, session, profiles, startRound, go, newSession } = useGame();
+  const { players, session, profiles, startRound, go } = useGame();
   const [toasts, setToasts] = useState<{ key: string; text: string; emoji: string }[]>([]);
   const result = round?.result;
 
@@ -161,15 +161,8 @@ export function Score() {
           <Button variant="ghost" small onClick={() => go('players')}>
             👥 Jugadores
           </Button>
-          <Button
-            variant="ghost"
-            small
-            onClick={() => {
-              newSession();
-              go('home');
-            }}
-          >
-            🏁 Terminar
+          <Button variant="ghost" small onClick={() => go('awards')}>
+            🏆 Terminar
           </Button>
         </div>
       </div>

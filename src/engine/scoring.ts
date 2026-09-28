@@ -12,6 +12,8 @@ export interface RoundOutcome {
   /** jugadores que dijeron la palabra maldita */
   cursed: string[];
   event?: EventId;
+  /** Civil que juega del lado del impostor (evento "cómplice"). */
+  accomplice?: string;
 }
 
 export type Winner = 'civ' | 'imp' | 'partial' | 'nobody-found' | 'nobody-missed';
@@ -30,7 +32,10 @@ export const PTS = {
   impSurviveBlind: 300,
   impGuess: 150,
   impNobodyVote: 300,
+  /** Por cada inocente eliminado gracias al impostor (modo eliminación). */
+  impPerInnocent: 50,
   nobodyFound: 150,
+  accompliceWin: 200,
   challengeDone: 50,
   challengeFail: -25,
   cursed: -50,
@@ -52,9 +57,15 @@ export function scoreRound(o: RoundOutcome): { winner: Winner; lines: ScoreLine[
       }
   } else {
     const caught = o.impostors.filter((i) => o.accused.includes(i));
+    const innocentsOut = o.accused.filter((a) => !o.impostors.includes(a)).length;
     winner = caught.length === o.impostors.length ? 'civ' : caught.length ? 'partial' : 'imp';
     for (const p of o.players) {
-      if (o.impostors.includes(p)) {
+      if (p === o.accomplice) {
+        if (o.nobodyVote || caught.length < o.impostors.length) {
+          lines[p].base += PTS.accompliceWin;
+          lines[p].reasons.push('Su impostor sobrevivió (cómplice)');
+        }
+      } else if (o.impostors.includes(p)) {
         if (o.nobodyVote) {
           lines[p].base += PTS.impNobodyVote;
           lines[p].reasons.push('Los convenció de que no había impostor');
@@ -62,6 +73,10 @@ export function scoreRound(o: RoundOutcome): { winner: Winner; lines: ScoreLine[
           const pts = o.event === 'blind' ? PTS.impSurviveBlind : PTS.impSurvive;
           lines[p].base += pts;
           lines[p].reasons.push(o.event === 'blind' ? 'Sobrevivió sin saber que era impostor' : 'Sobrevivió como impostor');
+          if (innocentsOut) {
+            lines[p].base += PTS.impPerInnocent * innocentsOut;
+            lines[p].reasons.push(`Hizo caer a ${innocentsOut} inocente${innocentsOut > 1 ? 's' : ''}`);
+          }
         } else if (o.guessed[p]) {
           lines[p].base += PTS.impGuess;
           lines[p].reasons.push('Atrapado, pero adivinó la carta');

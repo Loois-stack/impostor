@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { Avatar, Glitch } from '../components/ui';
 import { shake } from '../fx/fx';
-import { useGame } from '../store/game';
+import { roundStatus, useGame } from '../store/game';
 
 const HOLD_MS = 1100;
 
@@ -12,7 +12,9 @@ export function Vote() {
   const players = useGame((s) => s.players);
   const settings = useGame((s) => s.settings);
   const vote = useGame((s) => s.vote);
-  const need = round.event === 'double' ? 2 : Math.min(settings.impostors, Math.max(1, players.length - 2));
+  // En modo eliminación se expulsa a uno por votación.
+  const need = round.elimination ? 1 : round.event === 'double' ? 2 : Math.min(settings.impostors, Math.max(1, players.length - 2));
+  const { alive } = roundStatus(round);
   const [sel, setSel] = useState<string[]>([]);
   const [nobody, setNobody] = useState(false);
   const fill = useAnimationControls();
@@ -21,6 +23,7 @@ export function Vote() {
   const ready = nobody || sel.length === need;
 
   const pick = (id: string) => {
+    if (!alive.includes(id)) return;
     sfx.select();
     haptic(12);
     setNobody(false);
@@ -55,7 +58,9 @@ export function Vote() {
           <Glitch text="¿Quién miente?" hard />
         </div>
         <div className="dim" style={{ fontSize: 14 }}>
-          Discutan y elijan juntos {need === 1 ? 'a 1 sospechoso' : `a ${need} sospechosos`}.
+          {round.elimination
+            ? `Quedan ${alive.length}. El más votado sale del juego.`
+            : `Discutan y elijan juntos ${need === 1 ? 'a 1 sospechoso' : `a ${need} sospechosos`}.`}
         </div>
       </div>
 
@@ -63,11 +68,12 @@ export function Vote() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
           {players.map((p, i) => {
             const on = sel.includes(p.id);
+            const out = !alive.includes(p.id);
             return (
               <motion.button
                 key={p.id}
                 initial={{ opacity: 0, scale: 0.6, rotate: (i % 2 ? 1 : -1) * 8 }}
-                animate={{ opacity: 1, scale: on ? 1.04 : 1, rotate: 0 }}
+                animate={{ opacity: out ? 0.3 : 1, scale: on ? 1.04 : 1, rotate: 0 }}
                 transition={{ delay: i * 0.04, type: 'spring', stiffness: 350, damping: 20 }}
                 whileTap={{ scale: 0.92 }}
                 onClick={() => pick(p.id)}
@@ -81,8 +87,9 @@ export function Vote() {
                   boxShadow: on ? '0 0 30px rgba(255,46,77,.45), inset 0 0 0 1px #ff2e4d' : undefined,
                 }}
               >
-                <Avatar player={p} size={62} />
+                <Avatar player={p} size={62} style={out ? { filter: 'grayscale(1)' } : undefined} />
                 <b style={{ fontSize: 16 }}>{p.name}</b>
+                {out && <span style={{ position: 'absolute', top: 8, left: 10, fontSize: 22 }}>💀</span>}
                 {on && (
                   <motion.div
                     initial={{ scale: 3, opacity: 0, rotate: -30 }}
