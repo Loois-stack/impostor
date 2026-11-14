@@ -3,13 +3,15 @@ import { TopBar, stagger } from '../components/ui';
 import { useGame } from '../store/game';
 
 const STEPS = [
-  ['🃏', 'Reparto', 'Pasen el teléfono. Cada quien mantiene presionada su carta en secreto: ve una imagen y contexto de lo que le tocó.'],
+  ['🃏', 'Reparto', 'Con un teléfono: pásenlo y cada quien mantiene presionada su carta en secreto. Con varios teléfonos: cada quien la ve en el suyo.'],
   ['🔪', 'El impostor', 'Todos tienen la MISMA carta… menos el impostor, que tiene algo PARECIDO pero distinto (o nada, en modo clásico). A veces casi idéntico y puede camuflarse; a veces tendrá que jugársela.'],
   ['🗣️', 'Pistas', 'Por turnos, cada jugador dice una palabra o frase sobre su carta. Muy obvia = el impostor la descubre. Muy vaga = sospechan de ti.'],
-  ['🎭', 'Retos', 'Al que le toca turno puede caerle un reto: voz ridícula, mímica, restricciones… o una traición secreta, como defender al que sospechas.'],
-  ['⚡', 'Eventos', 'Algunas rondas traen sorpresas: doble impostor, impostor a ciegas (no sabe que lo es), palabra maldita… y rondas donde quizá no hay impostor.'],
-  ['🗳️', 'Votación', 'Discutan y elijan juntos al sospechoso. Si atrapan al impostor, aún puede ganar puntos adivinando la carta de los civiles.'],
-  ['🏆', 'Puntos', 'Civiles: +100 si atrapan al impostor. Impostor: +250 si sobrevive. Retos: +50 / −25. Rachas multiplican hasta x2. Sube de nivel y desbloquea logros.'],
+  ['⚡', 'Eventos especiales', 'Al que le toca turno puede caerle un evento: voz ridícula, acento mexicano, mímica, restricciones… La app avisa a quién le tocó y se quita cuando pasa el turno. Si lo cumple, +50.'],
+  ['🤫', 'Misiones secretas', 'A veces tu carta trae una misión que solo tú conoces: defender al sospechoso, hacerte el culpable… Nadie sabe quién tiene una hasta el final. Vale +100.'],
+  ['🎡', 'Eventos de ronda', 'Algunas rondas cambian las reglas: doble impostor, fiesta mexicana, cine mudo, ronda dorada, un bufón que quiere que lo acusen… y a veces un evento secreto que nadie conoce.'],
+  ['🗳️', 'Votación', 'Decidan juntos o voten en secreto. En eliminación, el acusado sale y la búsqueda sigue; cada inocente que echen les resta premio. Si quedan 2, gana el impostor.'],
+  ['🏆', 'Puntos', 'Civiles: +100 si atrapan al impostor. Impostor: +250 si sobrevive, o +150 si lo atrapan pero adivina la carta. Rachas multiplican hasta x2. Sube de nivel y desbloquea logros.'],
+  ['💚', 'Para pasarla bien', 'Los eventos están hechos para reírse, no para arriesgarse: nada de alcohol, golpes ni retos peligrosos. El modo +18 solo agrega groserías, y van para la carta, nunca para una persona.'],
 ];
 
 export function HowTo() {

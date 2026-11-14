@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import type { Skin } from '../store/prefs';
+import { SKINS } from './skins';
 
 export type Mood = 'calm' | 'horror' | 'danger';
 
@@ -6,6 +8,7 @@ interface Props {
   c1: string;
   c2: string;
   mood?: Mood;
+  skin?: Skin;
 }
 
 const hexToRgb = (h: string): [number, number, number] => {
@@ -21,13 +24,29 @@ interface Particle {
   vx: number;
   life: number;
   tw: number;
+  /** Color fijo (confeti) y giro. */
+  hue: number;
+  rot: number;
 }
 
-/** Fondo vivo: orbes de color que respiran con la categoría + partículas (brasas) que suben. */
-export function Backdrop({ c1, c2, mood = 'calm' }: Props) {
+/** Colores del papel picado del tema Fiesta. */
+const PAPEL = [
+  [255, 61, 129],
+  [255, 157, 0],
+  [57, 255, 136],
+  [46, 230, 255],
+  [255, 210, 61],
+  [157, 123, 255],
+];
+
+/**
+ * Fondo vivo: orbes de color que respiran con la categoría + partículas que dependen del tema
+ * visual (brasas que suben, papel picado que cae o polvo dorado que flota).
+ */
+export function Backdrop({ c1, c2, mood = 'calm', skin = 'neon' }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const target = useRef({ c1: hexToRgb(c1), c2: hexToRgb(c2), mood });
-  target.current = { c1: hexToRgb(c1), c2: hexToRgb(c2), mood };
+  const target = useRef({ c1: hexToRgb(c1), c2: hexToRgb(c2), mood, skin });
+  target.current = { c1: hexToRgb(c1), c2: hexToRgb(c2), mood, skin };
 
   useEffect(() => {
     const canvas = ref.current!;
@@ -43,7 +62,8 @@ export function Backdrop({ c1, c2, mood = 'calm' }: Props) {
     resize();
     window.addEventListener('resize', resize);
 
-    const cur = { c1: [...target.current.c1], c2: [...target.current.c2], danger: 0, horror: 0 };
+    const bg0 = SKINS[target.current.skin].bg;
+    const cur = { c1: [...target.current.c1], c2: [...target.current.c2], bg: [...bg0], danger: 0, horror: 0 };
     const parts: Particle[] = [];
     const spawn = (initial = false): Particle => ({
       x: Math.random() * w,
@@ -53,6 +73,8 @@ export function Backdrop({ c1, c2, mood = 'calm' }: Props) {
       vx: (Math.random() - 0.5) * 0.2,
       life: Math.random(),
       tw: Math.random() * Math.PI * 2,
+      hue: Math.floor(Math.random() * PAPEL.length),
+      rot: Math.random() * Math.PI,
     });
     for (let i = 0; i < 70; i++) parts.push(spawn(true));
 
@@ -68,9 +90,11 @@ export function Backdrop({ c1, c2, mood = 'calm' }: Props) {
       }
       cur.danger = lerp(cur.danger, tg.mood === 'danger' ? 1 : 0, 0.05);
       cur.horror = lerp(cur.horror, tg.mood === 'horror' ? 1 : 0, 0.03);
+      const sk = SKINS[tg.skin];
+      for (let i = 0; i < 3; i++) cur.bg[i] = lerp(cur.bg[i], sk.bg[i], 0.04);
 
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = `rgb(${7 + cur.danger * 20},${6},${11})`;
+      ctx.fillStyle = `rgb(${(cur.bg[0] + cur.danger * 20) | 0},${cur.bg[1] | 0},${cur.bg[2] | 0})`;
       ctx.fillRect(0, 0, w, h);
 
       ctx.globalCompositeOperation = 'lighter';
@@ -105,17 +129,33 @@ export function Backdrop({ c1, c2, mood = 'calm' }: Props) {
       }
 
       if (!reduced) {
-        const [r, g, b] = cur.danger > 0.3 ? [255, 60, 80] : cur.c1;
+        const dust = cur.horror > 0.5 ? 'embers' : sk.dust;
+        const [r, g, b] = cur.danger > 0.3 ? [255, 60, 80] : dust === 'gold' ? [255, 214, 120] : cur.c1;
         for (const p of parts) {
-          p.y -= p.vy * (1 + cur.danger * 2);
-          p.x += p.vx + Math.sin(t + p.tw) * 0.1;
+          const fall = dust === 'confetti';
+          // El papel picado cae balanceándose; las brasas y el oro suben.
+          p.y += (fall ? 1 : -1) * p.vy * (1 + cur.danger * 2) * (dust === 'gold' ? 0.5 : 1);
+          p.x += p.vx + Math.sin(t * (fall ? 1.6 : 1) + p.tw) * (fall ? 0.35 : 0.1);
           p.life += 0.004;
-          if (p.y < -10) Object.assign(p, spawn());
-          const a = (0.35 + Math.sin(t * 3 + p.tw) * 0.25) * Math.min(1, (h - p.y) / 60);
-          ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${a})`;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-          ctx.fill();
+          p.rot += 0.03;
+          if (fall ? p.y > h + 10 : p.y < -10) Object.assign(p, spawn(), fall ? { y: -10 } : {});
+          const edge = fall ? Math.min(1, (p.y + 10) / 60) : Math.min(1, (h - p.y) / 60);
+          if (fall) {
+            const [pr, pg, pb] = cur.danger > 0.3 ? [255, 60, 80] : PAPEL[p.hue];
+            ctx.fillStyle = `rgba(${pr},${pg},${pb},${0.55 * edge})`;
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.scale(1, Math.cos(p.rot * 2));
+            ctx.fillRect(-p.r * 1.6, -p.r, p.r * 3.2, p.r * 2);
+            ctx.restore();
+          } else {
+            const a = (0.35 + Math.sin(t * 3 + p.tw) * 0.25) * edge * (dust === 'gold' ? 1.3 : 1);
+            ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${a})`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r * (dust === 'gold' ? 0.8 : 1), 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
       raf = requestAnimationFrame(frame);

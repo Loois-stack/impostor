@@ -6,20 +6,27 @@ import { CAT } from './data/categories';
 import { THEME_BY_ID } from './data/themes';
 import { Backdrop, type Mood } from './fx/Backdrop';
 import { FxLayer } from './fx/fx';
+import { SKINS, skinVars } from './fx/skins';
+import { useNet } from './net/state';
 import { Awards } from './screens/Awards';
 import { Custom } from './screens/Custom';
 import { Deal } from './screens/Deal';
 import { Discuss } from './screens/Discuss';
+import { Events } from './screens/Events';
 import { Home } from './screens/Home';
 import { HowTo } from './screens/HowTo';
 import { Intro } from './screens/Intro';
+import { Lobby } from './screens/Lobby';
+import { Online } from './screens/Online';
 import { Players } from './screens/Players';
 import { Reveal } from './screens/Reveal';
 import { Score } from './screens/Score';
 import { SettingsScreen } from './screens/Settings';
 import { Setup } from './screens/Setup';
 import { Vote } from './screens/Vote';
-import { useGame, type Screen } from './store/game';
+import { keepAwake } from './services/wake';
+import { IN_ROUND, useGame, type Screen } from './store/game';
+import { usePrefs } from './store/prefs';
 
 const SCREENS: Record<Screen, () => React.JSX.Element | null> = {
   home: Home,
@@ -35,16 +42,39 @@ const SCREENS: Record<Screen, () => React.JSX.Element | null> = {
   howto: HowTo,
   custom: Custom,
   awards: Awards,
+  events: Events,
+  online: Online,
+  lobby: Lobby,
 };
 
-const IN_ROUND: Screen[] = ['intro', 'deal', 'discuss', 'vote', 'reveal'];
+/** Pantallas que necesitan una ronda en curso para dibujarse. */
+const NEEDS_ROUND: Screen[] = [...IN_ROUND, 'score'];
+
+/** Aviso fijo cuando se cae la conexión con la sala. */
+function NetBanner() {
+  const status = useNet((s) => s.status);
+  const role = useNet((s) => s.role);
+  const show = role !== 'off' && (status === 'reconnecting' || status === 'connecting');
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div className="net-banner" initial={{ y: -60, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -60, opacity: 0 }}>
+          <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }} style={{ display: 'inline-block' }}>
+            📡
+          </motion.span>
+          {status === 'connecting' ? 'Conectando con la sala…' : 'Se cortó la conexión. Reconectando…'}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
 export function App() {
   const screen = useGame((s) => s.screen);
   const round = useGame((s) => s.round);
-  const sound = useGame((s) => s.settings.sound);
-  const vibration = useGame((s) => s.settings.vibration);
-  const music = useGame((s) => s.settings.music);
+  const online = useGame((s) => s.online);
+  const { sound, vibration, music, skin } = usePrefs();
+  const sk = SKINS[skin];
 
   useEffect(() => {
     sfx.enabled = sound;
@@ -63,13 +93,18 @@ export function App() {
     return () => window.removeEventListener('pointerdown', unlock, { capture: true });
   }, []);
 
+  const inRound = IN_ROUND.includes(screen);
+  // La pantalla no se apaga mientras se juega (ni en la sala, donde se perdería la conexión).
+  useEffect(() => {
+    keepAwake(inRound || online);
+  }, [inRound, online]);
+
   // En la ruleta no se tiñe el fondo: delataría la categoría antes de que aterrice.
-  const showCat = round && IN_ROUND.includes(screen) && screen !== 'intro';
+  const showCat = round && inRound && screen !== 'intro';
   const theme = showCat && round.theme ? THEME_BY_ID[round.theme] : undefined;
   // En Mezcla los colores y el ambiente dependen del tema, nunca de la carta civil (delataría su categoría).
   const cat = !showCat ? null : theme ? { color: theme.color, color2: '#2a1a4a', horror: !!theme.horror } : CAT[round.cat];
   const horror = !!cat?.horror || round?.event === 'terror';
-  const inRound = IN_ROUND.includes(screen);
 
   useEffect(() => {
     if (horror && inRound && screen !== 'intro') sfx.startDrone();
@@ -84,16 +119,23 @@ export function App() {
   useEffect(() => {
     sfx.setMusic(musicMood);
   }, [musicMood]);
-  const Current = SCREENS[screen] ?? Home;
+
+  // Una pantalla de ronda sin ronda (p. ej. un invitado que recarga) cae al menú o a la sala.
+  const safe: Screen = NEEDS_ROUND.includes(screen) && !round ? (online ? 'lobby' : 'home') : screen;
+  const Current = SCREENS[safe] ?? Home;
+  const c1 = cat?.color ?? sk.c1;
+  const c2 = cat?.color2 ?? sk.c2;
 
   return (
-    <div className="app" style={{ '--accent': cat?.color ?? '#7c5cff', '--accent2': cat?.color2 ?? '#2ee6ff' } as CSSProperties}>
-      <Backdrop c1={cat?.color ?? '#7c5cff'} c2={cat?.color2 ?? '#ff2e4d'} mood={mood} />
+    <div className={`app skin-${skin}`} style={{ ...skinVars(skin), '--accent': cat?.color ?? sk.c1, '--accent2': cat?.color2 ?? sk.c2 } as CSSProperties}>
+      <Backdrop c1={c1} c2={c2} mood={mood} skin={skin} />
       <AnimatePresence mode="wait">
-        <motion.div key={screen} {...screenAnim} style={{ position: 'absolute', inset: 0 }}>
+        {/* Cada ronda nueva vuelve a montar la ruleta, aunque ya se estuviera en ella. */}
+        <motion.div key={safe === 'intro' ? `intro-${round?.n}-${round?.civil}` : safe} {...screenAnim} style={{ position: 'absolute', inset: 0 }}>
           <Current />
         </motion.div>
       </AnimatePresence>
+      <NetBanner />
       <FxLayer />
     </div>
   );

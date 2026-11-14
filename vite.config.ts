@@ -1,27 +1,33 @@
-import { defineConfig } from 'vitest/config';
+/// <reference types="vitest/config" />
+import { defineConfig, loadEnv } from 'vite';
 import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 /**
  * Política de seguridad (solo en la versión publicada; en desarrollo Vite necesita scripts en línea).
- * Solo se ejecuta código propio; las imágenes vienen únicamente de Wikimedia; sin formularios ni iframes.
+ * Solo se ejecuta código propio; las imágenes vienen únicamente de Wikimedia; las fuentes van
+ * dentro de la app; la única conexión extra es el servidor que presenta a los teléfonos de una sala.
  */
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com",
-  "img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org",
-  "connect-src 'self' https://upload.wikimedia.org https://thumb.wikimedia.org https://fonts.googleapis.com https://fonts.gstatic.com",
-  "manifest-src 'self'",
-  "worker-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'none'",
-].join('; ');
+const csp = (peerHost: string) =>
+  [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org",
+    `connect-src 'self' https://upload.wikimedia.org https://thumb.wikimedia.org https://${peerHost} wss://${peerHost}`,
+    "manifest-src 'self'",
+    "worker-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'none'",
+  ].join('; ');
 
-const securityHeaders = (): Plugin => ({
+/** Servidor de encuentro de las salas (el público de PeerJS, salvo que se configure otro). */
+const peerHost = (env: Record<string, string>) => (env.VITE_PEER_HOST ? `${env.VITE_PEER_HOST}${env.VITE_PEER_PORT ? `:${env.VITE_PEER_PORT}` : ''}` : '0.peerjs.com');
+
+const securityHeaders = (CSP: string): Plugin => ({
   name: 'security-meta',
   apply: 'build',
   transformIndexHtml: (html) =>
@@ -33,11 +39,11 @@ const securityHeaders = (): Plugin => ({
     ),
 });
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [
     react(),
-    securityHeaders(),
+    securityHeaders(csp(peerHost(loadEnv(mode, process.cwd(), 'VITE_')))),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
@@ -62,27 +68,14 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/[a-z]+\.wikipedia\.org\/api\/rest_v1\/.*/i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'wiki-api',
-              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
+            // Las fotos se piden con CORS: así se guarda la imagen real y no una respuesta opaca.
             urlPattern: /^https:\/\/(upload|thumb)\.wikimedia\.org\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'wiki-img',
-              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 90 },
-              cacheableResponse: { statuses: [0, 200] },
+              cacheName: 'wiki-img-v2',
+              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 180 },
+              cacheableResponse: { statuses: [200] },
             },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: { cacheName: 'fonts', expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 } },
           },
         ],
       },
@@ -90,4 +83,4 @@ export default defineConfig({
   ],
   build: { chunkSizeWarningLimit: 900 },
   test: { environment: 'node' },
-});
+}));

@@ -1,12 +1,12 @@
 import { AnimatePresence, Reorder, motion, useDragControls } from 'framer-motion';
 import { useState } from 'react';
 import { sfx } from '../audio/sfx';
-import { Avatar, Button, TopBar } from '../components/ui';
+import { Avatar, Button, Sheet, TopBar } from '../components/ui';
 import { levelFromXp } from '../engine/scoring';
 import { burst } from '../fx/fx';
-import { useGame, type Player } from '../store/game';
+import { AVATAR_CHOICES, MAX_PLAYERS, useGame, type Player } from '../store/game';
 
-function Row({ p, onRemove }: { p: Player; onRemove: () => void }) {
+function Row({ p, onRemove, onAvatar }: { p: Player; onRemove: () => void; onAvatar: () => void }) {
   const controls = useDragControls();
   const xp = useGame((s) => s.profiles[p.id]?.xp ?? 0);
   return (
@@ -29,7 +29,9 @@ function Row({ p, onRemove }: { p: Player; onRemove: () => void }) {
       >
         ⠿
       </span>
-      <Avatar player={p} size={40} />
+      <motion.button whileTap={{ scale: 0.85 }} onClick={onAvatar} aria-label={`Cambiar avatar de ${p.name}`}>
+        <Avatar player={p} size={40} />
+      </motion.button>
       <div className="grow" style={{ minWidth: 0 }}>
         <div style={{ fontWeight: 800, fontSize: 17, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
         <div className="dim" style={{ fontSize: 12, fontWeight: 700 }}>
@@ -44,8 +46,9 @@ function Row({ p, onRemove }: { p: Player; onRemove: () => void }) {
 }
 
 export function Players() {
-  const { players, addPlayer, removePlayer, go } = useGame();
+  const { players, addPlayer, removePlayer, setAvatar, go } = useGame();
   const [name, setName] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
 
   const add = () => {
     if (!name.trim()) return;
@@ -57,7 +60,7 @@ export function Players() {
 
   return (
     <div className="screen">
-      <TopBar title="Jugadores" onBack={() => go('home')} right={<div className="label">{players.length}/15</div>} />
+      <TopBar title="Jugadores" onBack={() => go('home')} right={<div className="label">{players.length}/{MAX_PLAYERS}</div>} />
 
       <form
         className="row content"
@@ -86,19 +89,19 @@ export function Players() {
             outline: 'none',
           }}
         />
-        <Button type="submit" small style={{ width: 64, minHeight: 54, fontSize: 30 }} disabled={!name.trim() || players.length >= 15}>
+        <Button type="submit" small style={{ width: 64, minHeight: 54, fontSize: 30 }} disabled={!name.trim() || players.length >= MAX_PLAYERS}>
           +
         </Button>
       </form>
       <div className="dim content" style={{ fontSize: 12.5, marginBottom: 12, lineHeight: 1.4 }}>
-        Ordénalos como están sentados en círculo (arrastra ⠿). Así se reparten las cartas y los turnos.
+        Ordénalos como están sentados en círculo (arrastra ⠿). Así se reparten las cartas y los turnos. Toca un avatar para cambiarlo.
       </div>
 
       <div className="scroll content">
         <Reorder.Group axis="y" values={players} onReorder={(v) => useGame.setState({ players: v })} className="stack" style={{ padding: 0, margin: 0 }}>
           <AnimatePresence initial={false}>
             {players.map((p) => (
-              <Row key={p.id} p={p} onRemove={() => removePlayer(p.id)} />
+              <Row key={p.id} p={p} onRemove={() => removePlayer(p.id)} onAvatar={() => setEditing(p.id)} />
             ))}
           </AnimatePresence>
         </Reorder.Group>
@@ -117,6 +120,26 @@ export function Players() {
           {players.length < 3 ? `Faltan ${3 - players.length}` : 'Continuar ➜'}
         </Button>
       </div>
+
+      <Sheet open={!!editing} onClose={() => setEditing(null)}>
+        <div className="h2">Elige un avatar</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
+          {AVATAR_CHOICES.map((a) => (
+            <motion.button
+              key={a}
+              whileTap={{ scale: 0.8 }}
+              onClick={() => {
+                if (editing) setAvatar(editing, a);
+                sfx.select();
+                setEditing(null);
+              }}
+              style={{ fontSize: 28, aspectRatio: '1', borderRadius: 12, background: 'var(--panel)' }}
+            >
+              {a}
+            </motion.button>
+          ))}
+        </div>
+      </Sheet>
     </div>
   );
 }

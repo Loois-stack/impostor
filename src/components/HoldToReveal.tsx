@@ -50,8 +50,8 @@ export function HoldToReveal({ front, onSeen, hint = 'Mantén presionado' }: { f
       onPointerUp={up}
       back={
         <>
-          <CardBack />
-          <div className="hold-hint" style={{ top: 'auto', bottom: 26 }}>
+          <CardBack hint />
+          <div className="hold-hint" style={{ top: 'auto', bottom: 'clamp(30px, 8%, 46px)' }}>
             <svg width="74" height="74" viewBox="0 0 74 74">
               <circle cx="37" cy="37" r="32" fill="rgba(0,0,0,.35)" stroke="rgba(255,255,255,.18)" strokeWidth="5" />
               <motion.circle

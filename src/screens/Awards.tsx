@@ -3,13 +3,15 @@ import { useEffect } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { Avatar, Button, Glitch } from '../components/ui';
 import { burst, flash } from '../fx/fx';
+import { leaveRoom } from '../net/net';
+import { useSeat } from '../net/state';
 import { useGame, type Player, type SessionStat } from '../store/game';
 
 const SUPERLATIVES: { key: keyof SessionStat; emoji: string; title: string; unit: string }[] = [
   { key: 'impWins', emoji: '🦎', title: 'Mejor mentiroso', unit: 'sobrevivió como impostor' },
   { key: 'civWins', emoji: '🐕‍🦺', title: 'Sabueso', unit: 'atrapó al impostor' },
   { key: 'accused', emoji: '🎯', title: 'Siempre sospechoso', unit: 'fue acusado' },
-  { key: 'challenges', emoji: '🎭', title: 'Rey de los retos', unit: 'retos cumplidos' },
+  { key: 'challenges', emoji: '🎭', title: 'Alma de la fiesta', unit: 'eventos y misiones cumplidos' },
   { key: 'allyWins', emoji: '🤝', title: 'Traidor de confianza', unit: 'ganó como cómplice' },
   { key: 'cursed', emoji: '☠️', title: 'Boca floja', unit: 'dijo la palabra maldita' },
 ];
@@ -23,6 +25,7 @@ const PODIUM = [
 
 export function Awards() {
   const { players, session, startRound, newSession, go } = useGame();
+  const { online, host } = useSeat();
   const ranked = [...players].sort((a, b) => (session.scores[b.id] ?? 0) - (session.scores[a.id] ?? 0));
   const top = [ranked[1], ranked[0], ranked[2]];
 
@@ -135,17 +138,25 @@ export function Awards() {
       </div>
 
       <div className="stack content" style={{ paddingTop: 12, gap: 8 }}>
-        <Button onClick={() => startRound()}>🔁 Seguir jugando</Button>
-        <Button
-          variant="ghost"
-          small
-          onClick={() => {
-            newSession();
-            go('home');
-          }}
-        >
-          🏁 Terminar la noche
-        </Button>
+        {host ? (
+          <>
+            <Button onClick={() => startRound()}>🔁 Seguir jugando</Button>
+            <Button
+              variant="ghost"
+              small
+              onClick={() => {
+                newSession();
+                go(online ? 'lobby' : 'home');
+              }}
+            >
+              🏁 Terminar la noche
+            </Button>
+          </>
+        ) : (
+          <Button variant="ghost" small onClick={() => void leaveRoom()}>
+            🚪 Salir de la sala
+          </Button>
+        )}
       </div>
     </div>
   );

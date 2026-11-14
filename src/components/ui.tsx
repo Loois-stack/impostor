@@ -1,4 +1,4 @@
-import { motion, type HTMLMotionProps } from 'framer-motion';
+import { AnimatePresence, motion, type HTMLMotionProps } from 'framer-motion';
 import type { CSSProperties, ReactNode } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import type { Player } from '../store/game';
@@ -120,6 +120,38 @@ export function Glitch({ text, hard, className = '', style }: { text: string; ha
     <span className={`glitch ${hard ? 'hard' : ''} ${className}`} data-text={text} style={style}>
       {text}
     </span>
+  );
+}
+
+/** Hoja que sube desde abajo (menús, detalles). Se cierra tocando fuera. */
+export function Sheet({ open, onClose, children, z = 40 }: { open: boolean; onClose: () => void; children: ReactNode; z?: number }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div className="sheet-back" style={{ zIndex: z }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+          <motion.div
+            className="sheet stack"
+            initial={{ y: 500 }}
+            animate={{ y: 0 }}
+            exit={{ y: 500 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sheet-grip" />
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** Capa oscura a pantalla completa para avisos importantes. */
+export function Overlay({ children, z = 40, tint = 'rgba(5,3,10,.86)' }: { children: ReactNode; z?: number; tint?: string }) {
+  return (
+    <motion.div className="overlay" style={{ zIndex: z, background: tint }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      {children}
+    </motion.div>
   );
 }
 

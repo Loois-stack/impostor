@@ -1,9 +1,12 @@
 import { motion } from 'framer-motion';
+import { useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
-import { Button, Segmented, Toggle, TopBar } from '../components/ui';
+import { Button, Segmented, Sheet, Toggle, TopBar } from '../components/ui';
 import { BY_CAT, MIN_CUSTOM } from '../data';
 import { CATEGORIES, CUSTOM_CAT } from '../data/categories';
 import type { CategoryId } from '../data/types';
+import { INTENSITY, type Intensity } from '../engine/challenges';
+import { useSeat } from '../net/state';
 import { useGame } from '../store/game';
 
 const MIX_DESC = {
@@ -18,11 +21,22 @@ const SIM_DESC = {
   far: 'El impostor tendrá algo más distinto: tendrá que improvisar mucho. Más fácil para los civiles.',
 };
 
+const VOTE_DESC = {
+  group: 'Discuten y deciden juntos; uno toca la pantalla por todos.',
+  secret: 'El teléfono pasa de mano en mano y cada quien vota sin que lo vean. Si hay empate, nadie sale.',
+};
+
+const pct = (p: number) => `${Math.round(p * 100)} %`;
+
 export function Setup() {
   const { settings, setSettings, players, session, go, startRound, newSession, customCards } = useGame();
+  const { online } = useSeat();
+  const [askAdult, setAskAdult] = useState(false);
   const allOn = CATEGORIES.every((c) => settings.cats.includes(c.id));
   const customOn = settings.cats.includes('custom') && customCards.length >= MIN_CUSTOM;
   const canTwo = players.length >= 6;
+  const lvl = INTENSITY[settings.intensity];
+  const anyEvents = settings.events || settings.challenges || settings.missions;
 
   const toggleCat = (id: CategoryId) => {
     const on = settings.cats.includes(id);
@@ -41,7 +55,7 @@ export function Setup() {
 
   return (
     <div className="screen">
-      <TopBar title="Configurar" onBack={() => go('players')} />
+      <TopBar title="Reglas" onBack={() => go(online ? 'lobby' : 'players')} />
       <div className="scroll content">
         <div className="stack" style={{ gap: 20 }}>
           <section className="stack" style={{ gap: 10 }}>
@@ -57,7 +71,7 @@ export function Setup() {
                   setSettings({ cats: allOn ? (keep.length ? keep : ['memes']) : [...CATEGORIES.map((c) => c.id), ...keep] });
                 }}
               >
-                {allOn ? 'Quitar todas' : '🎲 Aleatorio total'}
+                {allOn ? 'Quitar todas' : '🎲 Todas'}
               </motion.button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
@@ -71,19 +85,12 @@ export function Setup() {
                     transition={{ delay: i * 0.02, type: 'spring', stiffness: 400, damping: 28 }}
                     whileTap={{ scale: 0.92 }}
                     onClick={() => toggleCat(c.id)}
+                    className="cat-tile"
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '10px 10px',
-                      borderRadius: 16,
-                      textAlign: 'left',
-                      minHeight: 56,
                       background: on ? `linear-gradient(135deg, ${c.color}33, ${c.color2}44)` : 'var(--panel)',
-                      border: `1.5px solid ${on ? c.color : 'var(--line)'}`,
+                      borderColor: on ? c.color : 'var(--line)',
                       boxShadow: on ? `0 0 20px ${c.color}33` : 'none',
                       opacity: on ? 1 : 0.55,
-                      transition: 'background .25s, border-color .25s, opacity .25s',
                     }}
                   >
                     <span style={{ fontSize: 24 }}>{c.emoji}</span>
@@ -93,6 +100,7 @@ export function Setup() {
                         {BY_CAT[c.id].length} cartas
                       </small>
                     </span>
+                    {on && <span className="cat-check">✓</span>}
                   </motion.button>
                 );
               })}
@@ -122,6 +130,90 @@ export function Setup() {
               </span>
               <span style={{ fontSize: 20 }}>›</span>
             </motion.button>
+          </section>
+
+          <section className="stack" style={{ gap: 8 }}>
+            <div className="label">⚡ Eventos</div>
+            <Segmented
+              id="intensity"
+              value={settings.intensity}
+              onChange={(intensity: Intensity) => setSettings({ intensity })}
+              options={(Object.keys(INTENSITY) as Intensity[]).map((k) => ({ value: k, label: `${INTENSITY[k].emoji} ${INTENSITY[k].label}` }))}
+            />
+            <div className="odds" style={{ opacity: anyEvents ? 1 : 0.4 }}>
+              <div>
+                <b>{settings.events ? pct(lvl.event) : '—'}</b>
+                <small>de las rondas traen evento</small>
+              </div>
+              <div>
+                <b>{settings.challenges ? pct(lvl.turn) : '—'}</b>
+                <small>por turno de que te toque uno</small>
+              </div>
+              <div>
+                <b>{settings.missions ? pct(lvl.mission) : '—'}</b>
+                <small>por jugador de misión secreta</small>
+              </div>
+            </div>
+            <Toggle
+              emoji="🎡"
+              on={settings.events}
+              onChange={(events) => setSettings({ events })}
+              title="Eventos de ronda"
+              desc="Cambian las reglas para todos: doble impostor, fiesta mexicana, cine mudo, ronda dorada… y a veces uno secreto."
+            />
+            <Toggle
+              emoji="🎙️"
+              on={settings.challenges}
+              onChange={(challenges) => setSettings({ challenges })}
+              title="Eventos especiales de turno"
+              desc="Al jugador en turno le puede tocar una voz, un acento, mímica… Se avisa a quién le tocó y se quita al pasar el turno."
+            />
+            <Toggle
+              emoji="🤫"
+              on={settings.missions}
+              onChange={(missions) => setSettings({ missions })}
+              title="Misiones secretas"
+              desc="Llegan con tu carta y solo tú las conoces. Se revelan al final de la ronda."
+            />
+            <Toggle
+              emoji="🌶️"
+              on={settings.adult}
+              onChange={(adult) => (adult ? setAskAdult(true) : setSettings({ adult: false }))}
+              title="Modo +18"
+              desc="Agrega eventos con groserías y picardía mexicana. Solo palabras: nada de retos peligrosos."
+            />
+            <Button variant="ghost" small onClick={() => go('events')}>
+              👁️ Ver y elegir eventos
+            </Button>
+          </section>
+
+          <section className="stack" style={{ gap: 8 }}>
+            <Toggle
+              emoji="💀"
+              on={settings.elimination}
+              onChange={(elimination) => setSettings({ elimination })}
+              title="Eliminación"
+              desc="Si acusan a un inocente, sale del juego y siguen buscando con menos tiempo. Cada error baja el premio; si quedan solo 2, gana el impostor."
+            />
+            {!online && (
+              <>
+                <div className="label" style={{ marginTop: 6 }}>
+                  🗳️ Votación
+                </div>
+                <Segmented
+                  id="vote"
+                  value={settings.voteStyle}
+                  onChange={(voteStyle) => setSettings({ voteStyle })}
+                  options={[
+                    { value: 'group', label: 'En grupo' },
+                    { value: 'secret', label: 'Voto secreto' },
+                  ]}
+                />
+                <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
+                  {VOTE_DESC[settings.voteStyle]}
+                </div>
+              </>
+            )}
           </section>
 
           <section className="stack" style={{ gap: 8 }}>
@@ -233,35 +325,13 @@ export function Setup() {
               ]}
             />
           </section>
-
-          <section className="stack" style={{ gap: 8 }}>
-            <Toggle
-              emoji="💀"
-              on={settings.elimination}
-              onChange={(elimination) => setSettings({ elimination })}
-              title="Eliminación"
-              desc="Si votan a un inocente, sale del juego y siguen buscando. Si quedan solo 2, gana el impostor."
-            />
-            <Toggle
-              emoji="🎭"
-              on={settings.challenges}
-              onChange={(challenges) => setSettings({ challenges })}
-              title="Retos entre turnos"
-              desc="Al jugador en turno le puede tocar un reto: voz ridícula, traicionar, mímica…"
-            />
-            <Toggle
-              emoji="⚡"
-              on={settings.events}
-              onChange={(events) => setSettings({ events })}
-              title="Eventos sorpresa"
-              desc="Doble impostor, impostor a ciegas, ronda de terror, palabra maldita… y algo más."
-            />
-          </section>
         </div>
       </div>
 
       <div className="stack content" style={{ paddingTop: 12, gap: 8 }}>
-        {session.round > 0 ? (
+        {online ? (
+          <Button onClick={() => go('lobby')}>Listo ✔</Button>
+        ) : session.round > 0 ? (
           <>
             <Button onClick={() => start(false)}>Siguiente ronda ➜</Button>
             <Button variant="ghost" small onClick={() => start(true)}>
@@ -274,6 +344,29 @@ export function Setup() {
           </Button>
         )}
       </div>
+
+      <Sheet open={askAdult} onClose={() => setAskAdult(false)}>
+        <div className="h2">🌶️ Modo +18</div>
+        <div style={{ fontSize: 14.5, lineHeight: 1.5 }}>
+          Se agregan eventos con <b>groserías mexicanas y albures</b>: hablar como chilango malhablado, regañar a tu carta como mamá enojada…
+        </div>
+        <div className="dim" style={{ fontSize: 13, lineHeight: 1.5 }}>
+          Actívalo solo si todos en la mesa son mayores de edad y están de acuerdo. Las groserías van para la carta, nunca para insultar a alguien. No hay
+          retos de alcohol ni nada peligroso.
+        </div>
+        <Button
+          variant="danger"
+          onClick={() => {
+            setSettings({ adult: true });
+            setAskAdult(false);
+          }}
+        >
+          Somos adultos, actívalo
+        </Button>
+        <Button variant="ghost" small onClick={() => setAskAdult(false)}>
+          Mejor no
+        </Button>
+      </Sheet>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { burst, flash } from '../fx/fx';
+import { CardBack } from './GameCard';
 import { Glitch } from './ui';
 
 const N = 16;
@@ -25,30 +26,8 @@ export const SHUFFLE_MS = 5000;
 /** Reverso pequeño de carta para la animación. */
 function MiniBack({ glow }: { glow?: boolean }) {
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        borderRadius: 12,
-        background: 'radial-gradient(circle at 50% 40%, #2b2150 0%, #0c0914 75%)',
-        border: '1.5px solid rgba(255,255,255,.18)',
-        boxShadow: glow ? '0 0 30px rgba(255,46,77,.6), 0 12px 24px rgba(0,0,0,.6)' : '0 8px 18px rgba(0,0,0,.55)',
-        display: 'grid',
-        placeItems: 'center',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          inset: 6,
-          borderRadius: 8,
-          border: '1px solid rgba(255,255,255,.12)',
-          backgroundImage:
-            'repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 2px, transparent 2px 10px), repeating-linear-gradient(-45deg, rgba(255,255,255,.05) 0 2px, transparent 2px 10px)',
-        }}
-      />
-      <span style={{ fontSize: 34, filter: 'drop-shadow(0 0 10px rgba(255,46,77,.7))' }}>👁️</span>
+    <div className="mini-back" style={{ position: 'absolute', inset: 0, boxShadow: glow ? '0 0 30px color-mix(in srgb, var(--back-accent) 70%, transparent), 0 12px 24px rgba(0,0,0,.6)' : undefined }}>
+      <CardBack small />
     </div>
   );
 }

@@ -1,7 +1,10 @@
 import { motion, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { BY_CAT } from '../data';
 import { CAT } from '../data/categories';
+import { CH_BY_ID } from '../data/challenges';
 import type { CategoryId, Item } from '../data/types';
+import { PTS } from '../engine/scoring';
 import { imageFor } from '../services/images';
 import { Glitch } from './ui';
 
@@ -54,6 +57,8 @@ export function CardArt({ item, cat }: { item: Item | null; cat: CategoryId }) {
           src={url}
           alt={item?.name}
           draggable={false}
+          // Con CORS la respuesta se puede guardar de verdad para jugar sin internet.
+          crossOrigin={url.startsWith('data:') ? undefined : 'anonymous'}
           initial={{ opacity: 0, scale: 1.15 }}
           animate={loaded ? { opacity: 1, scale: 1 } : {}}
           transition={{ duration: 0.6 }}
@@ -91,8 +96,26 @@ function Dossier({ item }: { item: Item }) {
 }
 
 export interface CardNote {
-  kind: 'accomplice' | 'detective';
+  kind: 'accomplice' | 'detective' | 'jester';
   text: string;
+}
+
+const NOTE_META: Record<CardNote['kind'], { icon: string; title: string; cls: string }> = {
+  accomplice: { icon: '🤝', title: 'Eres el cómplice', cls: 'ally' },
+  detective: { icon: '🔎', title: 'Eres el detective', cls: 'det' },
+  jester: { icon: '🃏', title: 'Eres el bufón', cls: 'jest' },
+};
+
+function RoleBanner({ cls, icon, title, children, glitch }: { cls: string; icon: string; title: string; children: ReactNode; glitch?: boolean }) {
+  return (
+    <div className={`role-banner ${cls}`}>
+      <span className="role-icon">{icon}</span>
+      <span className="role-text">
+        <b>{glitch ? <Glitch text={title} hard /> : title}</b>
+        {children}
+      </span>
+    </div>
+  );
 }
 
 export function CardFront({
@@ -101,6 +124,7 @@ export function CardFront({
   role,
   note,
   topic,
+  mission,
 }: {
   item: Item | null;
   cat: CategoryId;
@@ -108,68 +132,81 @@ export function CardFront({
   note?: CardNote;
   /** Tema de la ronda en modo Mezcla. */
   topic?: string;
+  /** Id de la misión secreta que le tocó a este jugador. */
+  mission?: string;
 }) {
   const c = CAT[cat];
+  const hidden = role === 'imp-classic';
+  const pool = BY_CAT[cat] ?? [];
+  const num = item ? pool.findIndex((i) => i.id === item.id) + 1 : 0;
+  const ms = mission ? CH_BY_ID[mission] : undefined;
   return (
-    <>
-      <div className="cat-chip" style={{ color: c.color }}>
-        {c.emoji} {c.name}
+    <div className="card-inner" style={{ '--cc': c.color, '--cc2': c.color2 } as CSSProperties}>
+      <div className="cat-chip" style={{ color: hidden && topic ? '#fff' : c.color }}>
+        {hidden && topic ? `🔀 ${topic}` : `${c.emoji} ${c.name}`}
       </div>
-      <CardArt item={role === 'imp-classic' ? null : item} cat={cat} />
-      <div className="card-body">
-        <div
-          className={`card-name ${c.horror && cat !== 'scp' ? 'horror-font' : ''} ${(item?.name.length ?? 0) > 16 ? 'long' : ''}`}
-          style={{ color: role.startsWith('imp') ? '#fff' : undefined }}
-        >
-          {role === 'imp-classic' ? '???' : item?.name}
+      {num > 0 && !hidden && (
+        <div className="card-num">
+          {String(num).padStart(2, '0')}
+          <small>/{pool.length}</small>
         </div>
-        {role !== 'imp-classic' && item && <div className="card-ctx">{item.ctx}</div>}
-        {note && (
-          <div className={`role-banner ${note.kind === 'accomplice' ? 'imp' : 'civil'}`} style={{ background: note.kind === 'accomplice' ? 'rgba(255,138,61,.18)' : 'rgba(57,255,136,.14)', borderColor: note.kind === 'accomplice' ? '#ff8a3d' : '#39ff88', color: '#fff' }}>
-            <b>{note.kind === 'accomplice' ? '🤝 Eres el cómplice' : '🔎 Eres el detective'}</b>
-            {note.text}
+      )}
+      <CardArt item={hidden ? null : item} cat={cat} />
+      <div className="card-body">
+        <div className={`card-name ${c.horror && cat !== 'scp' ? 'horror-font' : ''} ${(item?.name.length ?? 0) > 16 ? 'long' : ''}`}>
+          {hidden ? '???' : item?.name}
+        </div>
+        <div className="card-rule" />
+        {!hidden && item && <div className={`card-ctx ${ms ? 'short' : ''}`}>{item.ctx}</div>}
+        {ms && (
+          <div className="mission">
+            <b>🤫 Misión secreta · +{PTS.missionDone}</b>
+            {ms.text}
           </div>
+        )}
+        {note && (
+          <RoleBanner cls={NOTE_META[note.kind].cls} icon={NOTE_META[note.kind].icon} title={NOTE_META[note.kind].title}>
+            {note.text}
+          </RoleBanner>
         )}
         {role === 'civil' && !note && (
-          <div className="role-banner civil">
-            <b>🛡️ Eres civil</b>
+          <RoleBanner cls="civil" icon="🛡️" title="Eres civil">
             Defiende esta carta. El impostor tiene algo <u>parecido</u>.
-          </div>
+          </RoleBanner>
         )}
         {role === 'imp' && (
-          <div className="role-banner imp">
-            <b>
-              <Glitch text="🔪 Eres el impostor" hard />
-            </b>
+          <RoleBanner cls="imp" icon="🔪" title="Eres el impostor" glitch>
             Los demás tienen algo <u>parecido</u>, no igual. ¡Camúflate!
-          </div>
+          </RoleBanner>
         )}
-        {role === 'imp-classic' && (
-          <div className="role-banner imp" style={{ marginTop: 0 }}>
-            <b>
-              <Glitch text="🔪 Eres el impostor" hard />
-            </b>
-            No sabes la carta. Solo conoces {topic ? 'el tema' : 'la categoría'}:{' '}
-            <b style={{ display: 'inline', fontSize: 'inherit', fontFamily: 'inherit' }}>{topic ?? c.name}</b>. Escucha, imita y sobrevive.
-          </div>
+        {hidden && (
+          <RoleBanner cls="imp" icon="🔪" title="Eres el impostor" glitch>
+            No sabes la carta. Solo conoces {topic ? 'el tema' : 'la categoría'}: <strong>{topic ?? c.name}</strong>. Escucha, imita y sobrevive.
+          </RoleBanner>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
-export function CardBack({ label }: { label?: ReactNode }) {
+/** Reverso de la carta. Sus colores salen del tema visual elegido. */
+export function CardBack({ label, small, hint }: { label?: ReactNode; small?: boolean; /** Deja libre la parte de abajo para la instrucción. */ hint?: boolean }) {
   return (
-    <>
-      <div className="back-pattern" />
-      <div className="center" style={{ position: 'relative', gap: 8 }}>
-        <div style={{ fontSize: 76, filter: 'drop-shadow(0 0 24px rgba(255,46,77,.6))' }}>👁️</div>
-        <div className="display" style={{ fontSize: 40 }}>
-          <Glitch text="IMPOSTOR" />
-        </div>
+    <div className={`card-back ${small ? 'small' : ''} ${hint ? 'with-hint' : ''}`}>
+      <div className="back-frame" />
+      <div className="back-rosette" />
+      <span className="pip tl">?</span>
+      {!hint && <span className="pip br">?</span>}
+      <div className="back-emblem">
+        <span className="back-eye">👁️</span>
+        {!small && (
+          <div className="display back-title">
+            <Glitch text="IMPOSTOR" />
+          </div>
+        )}
         {label}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -214,6 +251,7 @@ export function GameCard({
 
   const rotY = useTransform([flip, sx], ([f, x]: number[]) => f + x * 12);
   const rotX = useTransform(sy, (y) => -y * 12);
+  const lift = useTransform(flip, [0, 90, 180], [1, 1.06, 1]);
   const hx = useTransform(sx, (x) => `${50 + x * 40}%`);
   const hy = useTransform(sy, (y) => `${50 + y * 40}%`);
   const gx = useTransform(sx, (x) => `${50 - x * 50}%`);
@@ -244,26 +282,15 @@ export function GameCard({
       onContextMenu={(e) => e.preventDefault()}
       style={{ touchAction: 'none' }}
     >
-      {glow && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: '-8%',
-            borderRadius: 40,
-            background: glow,
-            filter: 'blur(40px)',
-            opacity: 0.55,
-          }}
-        />
-      )}
-      <motion.div className="card3d" style={{ rotateY: rotY, rotateX: rotX }}>
+      {glow && <div className="card-glow" style={{ background: glow }} />}
+      <motion.div className="card3d" style={{ rotateY: rotY, rotateX: rotX, scale: lift }}>
         <div className="face back">
           {back ?? <CardBack />}
           <motion.div className="holo" style={{ backgroundPosition: holoBg }} />
         </div>
         <div className="face front">
           {front}
-          <motion.div className="holo" style={{ backgroundPosition: holoBg, opacity: 0.3 }} />
+          <motion.div className="holo" style={{ backgroundPosition: holoBg, opacity: 0.28 }} />
           <motion.div className="glare" style={{ '--gx': gx, '--gy': gy } as unknown as CSSProperties} />
         </div>
       </motion.div>

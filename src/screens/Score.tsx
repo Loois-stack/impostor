@@ -5,7 +5,11 @@ import { Avatar, Button, Glitch } from '../components/ui';
 import { ACHIEVEMENTS } from '../engine/achievements';
 import { levelFromXp, xpForLevel } from '../engine/scoring';
 import { burst } from '../fx/fx';
+import { leaveRoom } from '../net/net';
+import { useSeat } from '../net/state';
 import { useGame } from '../store/game';
+
+const BOUNTY = '💰 Ronda dorada: todo valió doble';
 
 const WIN_TXT = {
   civ: { t: '¡Ganan los civiles!', e: '🛡️', c: '#2ee6ff' },
@@ -27,6 +31,7 @@ function CountUp({ to, delay }: { to: number; delay: number }) {
 export function Score() {
   const round = useGame((s) => s.round);
   const { players, session, profiles, startRound, go } = useGame();
+  const { online, host } = useSeat();
   const [toasts, setToasts] = useState<{ key: string; text: string; emoji: string }[]>([]);
   const result = round?.result;
 
@@ -72,12 +77,17 @@ export function Score() {
           <Glitch text={w.t} />
         </div>
         <div className="label">Ronda {round!.n} · Marcador</div>
+        {round!.event === 'bounty' && (
+          <div className="chip" style={{ borderColor: '#ffd23d' }}>
+            {BOUNTY}
+          </div>
+        )}
       </div>
 
       <div className="scroll content">
         <motion.div layout className="stack" style={{ gap: 8 }}>
           {ranked.map((p, i) => {
-            const line = result.lines.find((l) => l.player === p.id)!;
+            const line = result.lines.find((l) => l.player === p.id) ?? { player: p.id, base: 0, bonus: 0, reasons: [], mult: 1, total: 0, streak: 0 };
             const xp = profiles[p.id]?.xp ?? 0;
             const lvl = levelFromXp(xp);
             const prog = (xp - xpForLevel(lvl)) / (xpForLevel(lvl + 1) - xpForLevel(lvl));
@@ -118,7 +128,7 @@ export function Score() {
                       />
                     </div>
                     <div className="dim" style={{ fontSize: 11, marginTop: 3 }}>
-                      Nv {lvl} · {line.reasons.join(' · ') || 'Sin puntos esta ronda'}
+                      Nv {lvl} · {line.reasons.join(' · ') || (round!.order.includes(p.id) ? 'Sin puntos esta ronda' : 'No jugó esta ronda')}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -145,34 +155,47 @@ export function Score() {
       </div>
 
       <div className="stack content" style={{ paddingTop: 12, gap: 8 }}>
-        <Button
-          onClick={() => {
-            sfx.whoosh();
-            startRound();
-          }}
-          style={{ minHeight: 66, fontSize: 32 }}
-        >
-          🔁 Otra ronda
-        </Button>
-        <div className="row" style={{ gap: 8 }}>
-          <Button variant="ghost" small onClick={() => go('setup')}>
-            ⚙️ Ajustes
-          </Button>
-          <Button variant="ghost" small onClick={() => go('players')}>
-            👥 Jugadores
-          </Button>
-          <Button variant="ghost" small onClick={() => go('awards')}>
-            🏆 Terminar
-          </Button>
-        </div>
+        {host ? (
+          <>
+            <Button
+              onClick={() => {
+                sfx.whoosh();
+                startRound();
+              }}
+              style={{ minHeight: 66, fontSize: 32 }}
+            >
+              🔁 Otra ronda
+            </Button>
+            <div className="row" style={{ gap: 8 }}>
+              <Button variant="ghost" small onClick={() => go('setup')}>
+                ⚙️ Reglas
+              </Button>
+              <Button variant="ghost" small onClick={() => go(online ? 'lobby' : 'players')}>
+                {online ? '📡 Sala' : '👥 Jugadores'}
+              </Button>
+              <Button variant="ghost" small onClick={() => go('awards')}>
+                🏆 Terminar
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="dim center" style={{ fontWeight: 700, minHeight: 40 }}>
+              El anfitrión decide si va otra ronda…
+            </div>
+            <Button variant="ghost" small onClick={() => void leaveRoom()}>
+              🚪 Salir de la sala
+            </Button>
+          </>
+        )}
       </div>
 
-      <div style={{ position: 'fixed', top: 'calc(var(--safe-t) + 12px)', left: 16, right: 16, zIndex: 45, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
+      <div style={{ position: 'fixed', bottom: 'calc(var(--safe-b) + 150px)', left: 16, right: 16, zIndex: 45, display: 'flex', flexDirection: 'column-reverse', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
         <AnimatePresence>
           {toasts.map((t) => (
             <motion.div
               key={t.key}
-              initial={{ y: -80, opacity: 0, scale: 0.8 }}
+              initial={{ y: 60, opacity: 0, scale: 0.8 }}
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: -40, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 400, damping: 24 }}
