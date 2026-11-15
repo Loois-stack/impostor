@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Component, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { setVibration, sfx, type MusicMood } from './audio/sfx';
+import { LeaveFab } from './components/LeaveGame';
 import { screenAnim } from './components/ui';
 import { CAT } from './data/categories';
 import { THEME_BY_ID } from './data/themes';
@@ -54,8 +55,36 @@ const SCREENS: Record<Screen, () => React.JSX.Element | null> = {
 /** Pantallas donde se puede reaccionar con emojis. */
 const REACT_ON: Screen[] = ['discuss', 'vote', 'reveal', 'score', 'awards', 'lobby'];
 
+/** En sala, pantallas de la partida con botón para salir (las pistas lo tienen en su menú). */
+const LEAVE_ON: Screen[] = ['intro', 'deal', 'vote', 'reveal'];
+
 /** Pantallas que necesitan una ronda en curso para dibujarse. */
 const NEEDS_ROUND: Screen[] = [...IN_ROUND, 'score'];
+
+/**
+ * Red de seguridad para cada pantalla. Al salir de una sala, la partida se borra mientras la
+ * pantalla anterior todavía hace su animación de salida: si esa pantalla falla, se deja de
+ * dibujar en vez de tumbar toda la app.
+ */
+class ScreenGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    // Sin ronda es lo esperado (la pantalla iba de salida); cualquier otro error sí se reporta.
+    if (useGame.getState().round) console.error(error);
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+/** Una pantalla de ronda deja de dibujarse en cuanto ya no hay ronda (p. ej. al salir de la sala). */
+function RoundOnly({ children }: { children: ReactNode }) {
+  const round = useGame((s) => s.round);
+  return round ? children : null;
+}
 
 /** Aviso fijo cuando se cae la conexión con la sala. */
 function NetBanner() {
@@ -208,9 +237,18 @@ export function App() {
       <AnimatePresence mode="wait">
         {/* Cada ronda nueva vuelve a montar la ruleta, aunque ya se estuviera en ella. */}
         <motion.div key={safe === 'intro' ? `intro-${round?.n}-${round?.civil}` : safe} {...screenAnim} style={{ position: 'absolute', inset: 0 }}>
-          <Current />
+          <ScreenGuard>
+            {NEEDS_ROUND.includes(safe) ? (
+              <RoundOnly>
+                <Current />
+              </RoundOnly>
+            ) : (
+              <Current />
+            )}
+          </ScreenGuard>
         </motion.div>
       </AnimatePresence>
+      {online && LEAVE_ON.includes(safe) && <LeaveFab />}
       <NetBanner />
       <UpdateBanner screen={safe} online={online} />
       <SceneCard title={title} />

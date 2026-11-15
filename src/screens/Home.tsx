@@ -9,7 +9,7 @@ import { CHALLENGES } from '../data/challenges';
 import { ITEMS } from '../data';
 import { EVENT_LIST } from '../engine/events';
 import { burst, flash } from '../fx/fx';
-import { invite } from '../net/net';
+import { inviteOnce } from '../net/net';
 import { resumeScreen, useGame } from '../store/game';
 
 const FAN = [
@@ -41,7 +41,7 @@ export function Home() {
 
   // Si la app se abrió desde un enlace de invitación, va directo a entrar a la sala.
   useEffect(() => {
-    if (invite) go('online');
+    if (inviteOnce()) go('online');
   }, [go]);
 
   const logoTap = (e: React.MouseEvent) => {

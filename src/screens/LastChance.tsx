@@ -10,7 +10,7 @@ import { PTS } from '../engine/scoring';
 import { burst, flash, shake } from '../fx/fx';
 import { emojiRain } from '../fx/scene';
 import { useSeat } from '../net/state';
-import { useGame, type Player } from '../store/game';
+import { guessersOf, useGame, type Player } from '../store/game';
 
 const COLS = 3;
 
@@ -143,7 +143,8 @@ export function LastChance({ options }: { options: Item[] }) {
   const { guess, nextGuess } = useGame();
   const { online, me, host, seats } = useSeat();
   const P = (id: string) => players.find((p) => p.id === id)!;
-  const caught = round.impostors.filter((i) => round.accused.includes(i));
+  // Quienes adivinan: los impostores atrapados que siguen en la sala.
+  const caught = guessersOf(round);
   const guesser = caught[round.guessIdx];
   const picks = round.guessPicks ?? {};
   const picked = picks[guesser] ?? round.guessPick;

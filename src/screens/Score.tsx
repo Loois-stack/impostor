@@ -4,10 +4,10 @@ import { Emo } from '../components/Emo';
 import { useEffect, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { Avatar, Button, Glitch } from '../components/ui';
+import { LeaveSheet } from '../components/LeaveGame';
 import { ACHIEVEMENTS } from '../engine/achievements';
 import { levelFromXp, xpForLevel } from '../engine/scoring';
 import { burst } from '../fx/fx';
-import { leaveRoom } from '../net/net';
 import { useSeat } from '../net/state';
 import { useGame } from '../store/game';
 
@@ -35,6 +35,7 @@ export function Score() {
   const { players, session, profiles, startRound, go } = useGame();
   const { online, host } = useSeat();
   const [toasts, setToasts] = useState<{ key: string; text: string; emoji: string }[]>([]);
+  const [leaving, setLeaving] = useState(false);
   const result = round?.result;
 
   useEffect(() => {
@@ -186,7 +187,7 @@ export function Score() {
             <div className="dim center" style={{ fontWeight: 700, minHeight: 40 }}>
               El anfitrión decide si va otra ronda…
             </div>
-            <Button variant="ghost" small onClick={() => void leaveRoom()}>
+            <Button variant="ghost" small onClick={() => setLeaving(true)}>
               🚪 Salir de la sala
             </Button>
           </>
@@ -211,6 +212,7 @@ export function Score() {
           ))}
         </AnimatePresence>
       </div>
+      <LeaveSheet open={leaving} onClose={() => setLeaving(false)} />
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { Avatar, Button, Glitch, Handoff } from '../components/ui';
 import { NOBODY } from '../engine/vote';
 import { shake } from '../fx/fx';
 import { isHere, useNet, useSeat } from '../net/state';
-import { roundStatus, suspectsNeeded, useGame, type Player } from '../store/game';
+import { roundStatus, suspectsNeeded, useGame, votersOf, type Player } from '../store/game';
 
 const HOLD_MS = 1100;
 
@@ -17,9 +17,12 @@ function Ballot({
   need,
   onConfirm,
   holdLabel,
+  gone,
 }: {
   players: Player[];
   alive: string[];
+  /** Sala: salieron de la partida (ya no votan, pero se puede sospechar de ellos). */
+  gone?: string[];
   need: number;
   onConfirm: (sel: string[], nobody: boolean) => void;
   holdLabel: string;
@@ -86,6 +89,7 @@ function Ballot({
                 </div>
                 <b style={{ fontSize: 16 }}>{p.name}</b>
                 {out && <span className="suspect-tag">💀 Fuera</span>}
+                {!out && gone?.includes(p.id) && <span className="suspect-tag">🚪 Salió</span>}
                 {on && (
                   <motion.span className="suspect-stamp" initial={{ scale: 3, opacity: 0, rotate: -30 }} animate={{ scale: 1, opacity: 1, rotate: -10 }}>
                     Sospechoso
@@ -174,23 +178,26 @@ export function Vote() {
 
   // --- Sala: cada quien vota en su teléfono ---
   if (online) {
-    const myVoters = alive.filter((id) => seats.includes(id));
+    // Votan quienes siguen en juego y en la sala; de quien salió se puede seguir sospechando.
+    const voters = votersOf(round);
+    const gone = round.left ?? [];
+    const myVoters = voters.filter((id) => seats.includes(id));
     const canVote = myVoters.length > 0;
     const pendingHere = myVoters.filter((id) => !round.votes[id]);
     const voted = canVote && pendingHere.length === 0;
     // Varios jugadores en este teléfono: votan pasándoselo, igual que en el modo de un teléfono.
     if (pendingHere.length && (myVoters.length > 1 || pendingHere[0] !== me))
-      return <SecretPass players={players} shown={shown} alive={alive} voters={myVoters} />;
+      return <SecretPass players={players} shown={shown} alive={alive} voters={myVoters} everyone={voters} gone={gone} />;
     if (pendingHere.length)
       return (
         <div className="screen">
           <Header n={round.n} sub={round.elimination ? `Voto secreto. Quedan ${alive.length}: el más votado sale.` : 'Voto secreto: elige a tu sospechoso.'} />
-          <Ballot players={shown} alive={alive} need={1} holdLabel="✊ Mantén para votar" onConfirm={(sel, nobody) => castVote(me!, nobody ? NOBODY : sel[0])} />
+          <Ballot players={shown} alive={alive} gone={gone} need={1} holdLabel="✊ Mantén para votar" onConfirm={(sel, nobody) => castVote(me!, nobody ? NOBODY : sel[0])} />
         </div>
       );
     return (
       <div className="screen">
-        <Header n={round.n} sub={`Han votado ${cast} de ${alive.length}`} />
+        <Header n={round.n} sub={`Han votado ${cast} de ${voters.length}`} />
         <div className="grow center content" style={{ gap: 22 }}>
           <div style={{ fontSize: 70 }}>
             <Emo e={voted ? '🗳️' : canVote ? '🤔' : '👻'} anim={voted ? 'jelly' : undefined} />
@@ -198,12 +205,12 @@ export function Vote() {
           <div className="h2">
             {voted ? (myVoters.length > 1 ? 'Votos enviados' : 'Voto enviado') : !round.order.some((id) => seats.includes(id)) ? 'Solo observas esta ronda' : 'Estás fuera: ya no votas'}
           </div>
-          <VotedStrip players={players} alive={alive} votes={round.votes} present={present} />
+          <VotedStrip players={players} alive={voters} votes={round.votes} present={present} />
         </div>
         {host && (
           <div className="content" style={{ paddingTop: 12 }}>
             <Button variant="danger" disabled={cast === 0} onClick={() => closeVote()}>
-              Cerrar votación ({cast}/{alive.length})
+              Cerrar votación ({cast}/{voters.length})
             </Button>
           </div>
         )}
@@ -230,7 +237,24 @@ export function Vote() {
  * Voto secreto pasando el teléfono entre `voters`. Con un solo teléfono, al terminar se cuentan
  * los votos (`closeWhenDone`); en sala, el anfitrión cierra cuando votaron todos los teléfonos.
  */
-function SecretPass({ players, shown, alive, voters, closeWhenDone }: { players: Player[]; shown: Player[]; alive: string[]; voters: string[]; closeWhenDone?: boolean }) {
+function SecretPass({
+  players,
+  shown,
+  alive,
+  voters,
+  closeWhenDone,
+  everyone = alive,
+  gone,
+}: {
+  players: Player[];
+  shown: Player[];
+  alive: string[];
+  voters: string[];
+  closeWhenDone?: boolean;
+  /** Todos los que votan (en sala, en todos los teléfonos). */
+  everyone?: string[];
+  gone?: string[];
+}) {
   const round = useGame((s) => s.round)!;
   const { castVote, closeVote } = useGame();
   const [open, setOpen] = useState(false);
@@ -238,7 +262,7 @@ function SecretPass({ players, shown, alive, voters, closeWhenDone }: { players:
   const [sent, setSent] = useState<string[]>([]);
   const pending = voters.filter((id) => !round.votes[id] && !sent.includes(id));
   const voter = players.find((p) => p.id === pending[0]);
-  const done = alive.filter((id) => round.votes[id] || sent.includes(id)).length;
+  const done = everyone.filter((id) => round.votes[id] || sent.includes(id)).length;
 
   // Cuando ya votaron todos, un momento de suspenso y se cuentan.
   useEffect(() => {
@@ -250,7 +274,7 @@ function SecretPass({ players, shown, alive, voters, closeWhenDone }: { players:
 
   return (
     <div className="screen">
-      <Header n={round.n} sub={`Voto secreto · ${done} de ${alive.length}`} />
+      <Header n={round.n} sub={`Voto secreto · ${done} de ${everyone.length}`} />
       <AnimatePresence mode="wait">
         {!voter ? (
           <motion.div key="count" className="grow center content" style={{ gap: 14 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -294,6 +318,7 @@ function SecretPass({ players, shown, alive, voters, closeWhenDone }: { players:
             <Ballot
               players={shown}
               alive={alive}
+              gone={gone}
               need={1}
               holdLabel={`✊ Mantén para votar, ${voter.name}`}
               onConfirm={(sel, nobody) => {

@@ -13,6 +13,8 @@ const STEPS = [
   ['🤫', 'Misiones secretas', 'A veces tu carta trae una misión que solo tú conoces: defender al sospechoso, hacerte el culpable… Nadie sabe quién tiene una hasta el final. Vale +100.'],
   ['🎡', 'Eventos de ronda', 'Algunas rondas cambian las reglas: doble impostor, fiesta mexicana, cine mudo, ronda dorada, un bufón que quiere que lo acusen… y a veces un evento secreto que nadie conoce.'],
   ['🗳️', 'Votación', 'Decidan juntos o voten en secreto. En eliminación, el acusado sale y la búsqueda sigue; cada inocente que echen les resta premio. Si quedan 2, gana el impostor.'],
+  ['✋', 'Pedir votación (varios teléfonos)', 'Cualquiera puede tocar el botón rojo 🗳️ para pedir que se vote. Cuando lo pide la mayoría, al terminar la vuelta todos pasan a votar; si lo piden todos, se vota en ese momento. Se puede cancelar tocándolo otra vez.'],
+  ['🚪', 'Salir de la partida', 'En varios teléfonos puedes salir cuando quieras (te pregunta si estás seguro). La partida sigue sin ti: se salta tu turno y no te esperan para votar. Si sale el anfitrión, se cierra la sala para todos.'],
   ['🎯', 'Última oportunidad', 'Si atrapan al impostor, antes de revelar la verdad tiene una oportunidad: adivinar la carta de los civiles entre seis. Si acierta, se lleva +150. Si atraparon a varios, cada uno elige en secreto y se revela al final.'],
   ['🏆', 'Puntos', 'Civiles: +100 si atrapan al impostor. Impostor: +250 si sobrevive, o +150 si lo atrapan pero adivina la carta. Rachas multiplican hasta x2. Sube de nivel y desbloquea logros.'],
   ['💚', 'Para pasarla bien', 'Los eventos están hechos para reírse, no para arriesgarse: nada de alcohol, golpes ni retos peligrosos. El modo +18 solo agrega groserías, y van para la carta, nunca para una persona.'],

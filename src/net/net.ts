@@ -19,7 +19,7 @@ import { publicId, useNet } from './state';
  * Es un juego entre amigos: el estado completo viaja a cada teléfono y no se cifra nada extra.
  */
 
-const PROTOCOL = 4;
+const PROTOCOL = 5;
 const PREFIX = 'impostor-quien-miente-';
 /** Sin letras ni números que se confundan al dictarlos (0/O, 1/I…). */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -66,6 +66,14 @@ export const invite = (() => {
     return '';
   }
 })();
+
+let inviteUsed = false;
+/** ¿Hay que abrir la pantalla de sala por el enlace? Solo la primera vez (al salir de la sala ya no). */
+export function inviteOnce() {
+  if (inviteUsed || !invite) return false;
+  inviteUsed = true;
+  return true;
+}
 
 /** Servidor de encuentro. Por defecto el público de PeerJS; se puede cambiar con variables VITE_PEER_*. */
 function peerOptions(): PeerOptions {
@@ -187,9 +195,9 @@ function onGuest(conn: DataConnection) {
     else if (m.t === 'react') relayReaction(m.e, pid);
     else if (m.t === 'bye') {
       conns.delete(pid);
-      // Quien se sale entre rondas deja su lugar (con quienes jugaban en su teléfono); a media ronda se conserva.
-      const { round } = useGame.getState();
-      if (!round || round.result) useGame.getState().removePlayer(pid);
+      // Salió de la partida: entre rondas deja su lugar (con quienes jugaban en su teléfono);
+      // a media ronda la partida sigue sin él (se salta su turno y no se le espera para votar).
+      useGame.getState().leaveRound(pid);
       schedule();
     }
   });
@@ -384,7 +392,8 @@ async function exitGuest(error?: string) {
   teardown();
   clock.offset = 0;
   // Orden importante: primero se limpia y se recarga lo guardado, y solo entonces se vuelve a guardar.
-  useGame.setState({ players: [], profiles: {}, round: null, online: false, benched: undefined, customCards: [] });
+  // La pantalla cambia en el mismo instante en que se borra la partida (si no, una pantalla de ronda se queda sin ronda).
+  useGame.setState({ players: [], profiles: {}, round: null, online: false, benched: undefined, customCards: [], screen: 'home' });
   syncCustom([]);
   await useGame.persist.rehydrate();
   link.guest = false;

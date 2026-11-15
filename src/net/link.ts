@@ -14,6 +14,8 @@ export type NetAction =
   | { a: 'vote'; as?: string; target: string }
   | { a: 'guess'; as?: string; id: string }
   | { a: 'cursed'; player: string }
+  /** Sala: pedir (o dejar de pedir) que se vote al terminar la vuelta. */
+  | { a: 'callVote'; as?: string; on: boolean }
   | { a: 'addLocal'; name: string }
   | { a: 'removeLocal'; as: string }
   | { a: 'avatar'; as: string; avatar: string };

@@ -4,7 +4,9 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { EventCard } from '../components/EventCard';
 import { EventOverlay } from '../components/EventOverlay';
+import { LeaveSheet } from '../components/LeaveGame';
 import { PlayerCard } from '../components/PlayerCard';
+import { VoteCallBar, VoteCallButton } from '../components/VoteCall';
 import { Avatar, Button, Glitch, IconButton, Overlay, Sheet } from '../components/ui';
 import { CAT } from '../data/categories';
 import { KIND_META } from '../data/challenges';
@@ -162,7 +164,7 @@ export function Discuss() {
   const moderatorId = useGame((s) => s.session.moderator);
   const { online, me, host, seats } = useSeat();
   const present = useNet((s) => s.present);
-  const [sheet, setSheet] = useState<'cursed' | 'event' | 'menu' | 'pickMod' | 'pickPeek' | null>(null);
+  const [sheet, setSheet] = useState<'cursed' | 'event' | 'menu' | 'pickMod' | 'pickPeek' | 'leave' | null>(null);
   const [peek, setPeek] = useState<string | null>(null);
   const [timeUp, setTimeUp] = useState(false);
 
@@ -181,7 +183,8 @@ export function Discuss() {
   const judge = host && turnEv && !turnEv.round;
   // En sala: el turno es "mío" si es de este teléfono (yo o alguien que juega en él).
   const myTurn = online && seats.includes(pid);
-  const myRoundSeats = round.order.filter((id) => seats.includes(id) && !round.accused.includes(id));
+  const left = round.left ?? [];
+  const myRoundSeats = round.order.filter((id) => seats.includes(id) && !round.accused.includes(id) && !left.includes(id));
   const last = isLastTurn(round);
   const playing = !online || myRoundSeats.length > 0;
   // Efectos públicos que duran toda la ronda (acentos, reglas…), de quien no está en turno.
@@ -303,12 +306,13 @@ export function Discuss() {
           const p = P(id);
           const done = i < round.turn;
           const out = round.accused.includes(id);
+          const gone = left.includes(id);
           const ev = activeTurnEvent(round, id);
           const off = online && !isHere(p, present);
           return (
             <motion.div
               key={id}
-              animate={{ scale: i === round.turn ? 1.2 : out ? 0.8 : 1, opacity: i === round.turn ? 1 : out ? 0.25 : done ? 0.4 : 0.75 }}
+              animate={{ scale: i === round.turn ? 1.2 : out || gone ? 0.8 : 1, opacity: i === round.turn ? 1 : out || gone ? 0.25 : done ? 0.4 : 0.75 }}
               style={{ position: 'relative' }}
             >
               <Avatar
@@ -318,6 +322,8 @@ export function Discuss() {
               />
               {out ? (
                 <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 16 }}>💀</span>
+              ) : gone ? (
+                <span className="badge">🚪</span>
               ) : off ? (
                 <span className="badge">📵</span>
               ) : ev ? (
@@ -407,6 +413,8 @@ export function Discuss() {
       )}
 
       <div className="stack content" style={{ gap: 8 }}>
+        {/* En sala, cualquiera pide votar con el botón rojo; con mayoría se vota al terminar la vuelta. */}
+        {online && <VoteCallBar />}
         {host ? (
           judge ? (
             <div className="row" style={{ gap: 8 }}>
@@ -416,27 +424,42 @@ export function Discuss() {
               <Button silent variant="danger" onClick={() => pass(false)} style={{ flex: 1, fontSize: 22 }}>
                 ❌ Falló
               </Button>
-              <Button variant="ghost" onClick={() => openVote()} style={{ width: 62, flexShrink: 0, minHeight: 60 }} aria-label="Votar ya">
-                🗳️
-              </Button>
+              {online ? (
+                <VoteCallButton seats={myRoundSeats} style={{ width: 96, flexShrink: 0, minHeight: 60, fontSize: 18 }} />
+              ) : (
+                <Button variant="ghost" onClick={() => openVote()} style={{ width: 62, flexShrink: 0, minHeight: 60 }} aria-label="Votar ya">
+                  🗳️
+                </Button>
+              )}
             </div>
           ) : (
             <div className="row" style={{ gap: 8 }}>
               <Button onClick={() => pass()} variant={last ? 'danger' : 'plain'} style={{ flex: 2 }}>
                 {last ? '🗳️ ¡A votar!' : 'Siguiente ➜'}
               </Button>
-              {!last && (
-                <Button variant="danger" onClick={() => openVote()} style={{ flex: 1, fontSize: 22 }}>
-                  🗳️ Votar
-                </Button>
-              )}
+              {!last &&
+                (online ? (
+                  <VoteCallButton seats={myRoundSeats} style={{ flex: 1, fontSize: 22 }} />
+                ) : (
+                  <Button variant="danger" onClick={() => openVote()} style={{ flex: 1, fontSize: 22 }}>
+                    🗳️ Votar
+                  </Button>
+                ))}
             </div>
           )
         ) : myTurn ? (
-          <Button onClick={() => pass()}>{pid === me ? 'Terminé mi turno ➜' : `Terminó ${player.name} ➜`}</Button>
+          <div className="row" style={{ gap: 8 }}>
+            <Button onClick={() => pass()} style={{ flex: 2 }}>
+              {pid === me ? 'Terminé mi turno ➜' : `Terminó ${player.name} ➜`}
+            </Button>
+            <VoteCallButton seats={myRoundSeats} style={{ flex: 1, fontSize: 22 }} />
+          </div>
         ) : (
-          <div className="dim center" style={{ fontWeight: 700, minHeight: 44 }}>
-            Escucha la pista de {player.name}…
+          <div className="row" style={{ gap: 10 }}>
+            <div className="dim grow" style={{ fontWeight: 700, minHeight: 44, display: 'flex', alignItems: 'center' }}>
+              Escucha la pista de {player.name}…
+            </div>
+            <VoteCallButton seats={myRoundSeats} style={{ flex: '0 0 46%', fontSize: 22 }} />
           </div>
         )}
         {online && playing && (
@@ -563,15 +586,34 @@ export function Discuss() {
             </Button>
           </>
         )}
+        {host && online && (
+          <Button
+            variant="ghost"
+            small
+            onClick={() => {
+              setSheet(null);
+              openVote();
+            }}
+          >
+            🗳️ Votar ya, sin esperar
+          </Button>
+        )}
         {host && (
           <Button variant="ghost" small onClick={() => go(online ? 'lobby' : 'home')}>
-            {online ? '🚪 Volver a la sala' : '🏠 Salir al menú'}
+            {online ? '🏠 Volver a la sala' : '🏠 Salir al menú'}
+          </Button>
+        )}
+        {online && (
+          <Button variant="ghost" small onClick={() => setSheet('leave')}>
+            🚪 Salir de la partida
           </Button>
         )}
         <Button small onClick={() => setSheet(null)}>
           Seguir jugando
         </Button>
       </Sheet>
+
+      <LeaveSheet open={sheet === 'leave'} onClose={() => setSheet(null)} />
 
       <Sheet open={sheet === 'pickPeek'} onClose={() => setSheet(null)}>
         <div className="h2">¿Quién olvidó su carta?</div>

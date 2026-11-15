@@ -1,11 +1,11 @@
 import { motion } from 'framer-motion';
 import { emojiRain } from '../fx/scene';
 import { Emo } from '../components/Emo';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { Avatar, Button, Glitch } from '../components/ui';
+import { LeaveSheet } from '../components/LeaveGame';
 import { burst, flash } from '../fx/fx';
-import { leaveRoom } from '../net/net';
 import { useSeat } from '../net/state';
 import { useGame, type Player, type SessionStat } from '../store/game';
 
@@ -28,6 +28,7 @@ const PODIUM = [
 export function Awards() {
   const { players, session, startRound, newSession, go } = useGame();
   const { online, host } = useSeat();
+  const [leaving, setLeaving] = useState(false);
   const ranked = [...players].sort((a, b) => (session.scores[b.id] ?? 0) - (session.scores[a.id] ?? 0));
   const top = [ranked[1], ranked[0], ranked[2]];
 
@@ -158,11 +159,12 @@ export function Awards() {
             </Button>
           </>
         ) : (
-          <Button variant="ghost" small onClick={() => void leaveRoom()}>
+          <Button variant="ghost" small onClick={() => setLeaving(true)}>
             🚪 Salir de la sala
           </Button>
         )}
       </div>
+      <LeaveSheet open={leaving} onClose={() => setLeaving(false)} />
     </div>
   );
 }

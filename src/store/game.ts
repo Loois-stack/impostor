@@ -131,6 +131,10 @@ export interface Round {
   dealIdx: number;
   /** Multijugador: quiénes ya vieron su carta. */
   ready: string[];
+  /** Sala: quienes salieron de la partida a media ronda (con quienes jugaban en su teléfono). */
+  left?: string[];
+  /** Sala: quienes piden votar. Con mayoría se vota al terminar la vuelta; si lo piden todos, ya. */
+  voteCalls?: string[];
   /** Sobre de cada jugador (diseño y brillo). Se sortea sin mirar el rol. */
   packs?: Record<string, PackRoll>;
   lap: number;
@@ -226,6 +230,10 @@ interface State {
   vote(accused: string[], nobody: boolean, tallyInfo?: Round['lastTally']): void;
   castVote(voter: string, target: string): void;
   closeVote(): void;
+  /** Sala: un jugador pide (o deja de pedir) votar. */
+  callVote(player: string, on: boolean): void;
+  /** Sala (anfitrión): un teléfono salió a media ronda; la partida sigue sin él. */
+  leaveRound(owner: string): void;
   setStep(step: Step): void;
   guess(id: string): void;
   nextGuess(): void;
@@ -331,17 +339,35 @@ export function suspectsNeeded(r: Pick<Round, 'elimination' | 'declared' | 'orde
   return Math.max(1, Math.min(r.declared, alive - 2));
 }
 
-/** Siguiente turno a partir de (lap, turn) saltando eliminados. */
-export function advance(r: Pick<Round, 'order' | 'accused'>, lap: number, turn: number): { lap: number; turn: number } {
+/** Siguiente turno a partir de (lap, turn) saltando eliminados y a quienes salieron de la partida. */
+export function advance(r: Pick<Round, 'order' | 'accused' | 'left'>, lap: number, turn: number): { lap: number; turn: number } {
+  const left = r.left ?? [];
   for (let i = 0; i < r.order.length; i++) {
     turn++;
     if (turn >= r.order.length) {
       turn = 0;
       lap++;
     }
-    if (!r.accused.includes(r.order[turn])) break;
+    if (!r.accused.includes(r.order[turn]) && !left.includes(r.order[turn])) break;
   }
   return { lap, turn };
+}
+
+/** Quienes siguen en juego y en la sala: pueden votar y pedir votación. */
+export const votersOf = (r: Pick<Round, 'order' | 'accused' | 'left'>) => r.order.filter((id) => !r.accused.includes(id) && !(r.left ?? []).includes(id));
+
+/** Impostores atrapados que pueden intentar adivinar (los que salieron de la partida ya no). */
+export const guessersOf = (r: Pick<Round, 'impostors' | 'accused' | 'left'>) => r.impostors.filter((i) => r.accused.includes(i) && !(r.left ?? []).includes(i));
+
+/**
+ * Sala: cuántos piden votar. Con mayoría (`ready`) se vota al terminar la vuelta; si lo piden
+ * todos (`all`), de inmediato.
+ */
+export function voteCallStatus(r: Pick<Round, 'order' | 'accused' | 'left' | 'voteCalls'>) {
+  const voters = votersOf(r);
+  const calls = (r.voteCalls ?? []).filter((id) => voters.includes(id));
+  const need = Math.floor(voters.length / 2) + 1;
+  return { calls, need, total: voters.length, ready: voters.length > 0 && calls.length >= need, all: voters.length > 0 && calls.length === voters.length };
 }
 
 /** ¿El turno actual es el último antes de votar? (cuenta bien aunque el último de la lista esté eliminado) */
@@ -469,6 +495,9 @@ export const useGame = create<State>()(
 
       startRound() {
         if (link.guest) return;
+        // En sala, quien salió a media ronda y no volvió ya no recibe carta.
+        const gone = get().online ? (get().round?.left ?? []) : [];
+        if (gone.length) set({ players: get().players.filter((p) => !gone.includes(p.id)) });
         const { players, settings, session } = get();
         let { history } = get();
         const rng = makeRng();
@@ -606,7 +635,9 @@ export const useGame = create<State>()(
       beginDiscuss() {
         const { round, players, history, settings } = get();
         if (!round || link.guest || round.phase !== 'deal') return;
-        const { r, h } = rollTurnChallenge({ ...round, phase: 'discuss', dealIdx: players.length, startedAt: Date.now() }, history, settings);
+        // Si el primero en la lista ya salió de la partida, empieza el siguiente.
+        const first = advance(round, 1, -1);
+        const { r, h } = rollTurnChallenge({ ...round, phase: 'discuss', lap: first.lap, turn: first.turn, dealIdx: players.length, startedAt: Date.now() }, history, settings);
         set({ round: r, history: h, screen: 'discuss' });
       },
 
@@ -626,7 +657,10 @@ export const useGame = create<State>()(
           if (result !== undefined) cur = { ...cur, challengeResults: { ...cur.challengeResults, [pid]: result } };
         }
         const { lap, turn } = advance(cur, cur.lap, cur.turn);
-        if (cur.laps > 0 && lap > cur.laps) return set({ round: { ...cur, phase: 'vote', votes: {} }, screen: 'vote' });
+        // Se acabó la vuelta: si la mayoría pidió votar (o ya no hay más vueltas), todos a votar.
+        const lapDone = lap > cur.lap;
+        if ((cur.laps > 0 && lap > cur.laps) || (lapDone && voteCallStatus(cur).ready))
+          return set({ round: { ...cur, phase: 'vote', votes: {}, voteCalls: [] }, screen: 'vote' });
         const { r, h } = rollTurnChallenge({ ...cur, lap, turn }, history, settings);
         set({ round: r, history: h });
       },
@@ -648,7 +682,58 @@ export const useGame = create<State>()(
       openVote() {
         const { round } = get();
         if (!round || link.guest || round.result) return;
-        set({ round: { ...round, phase: 'vote', votes: {}, pendingChallenge: undefined }, screen: 'vote' });
+        set({ round: { ...round, phase: 'vote', votes: {}, voteCalls: [], pendingChallenge: undefined }, screen: 'vote' });
+      },
+
+      callVote(player, on) {
+        if (link.guest) return link.send({ a: 'callVote', as: player, on });
+        const { round } = get();
+        if (!round || round.phase !== 'discuss' || !votersOf(round).includes(player)) return;
+        const had = (round.voteCalls ?? []).includes(player);
+        if (had === on) return;
+        const voteCalls = on ? [...(round.voteCalls ?? []), player] : (round.voteCalls ?? []).filter((id) => id !== player);
+        const next = { ...round, voteCalls };
+        // Si lo piden todos, no hay nada que esperar.
+        if (voteCallStatus(next).all) return set({ round: { ...next, phase: 'vote', votes: {}, voteCalls: [], pendingChallenge: undefined }, screen: 'vote' });
+        set({ round: next });
+      },
+
+      leaveRound(owner) {
+        const { round, players, online } = get();
+        if (link.guest || !online) return;
+        if (!round || round.result) return get().removePlayer(owner);
+        const ids = players.filter((p) => p.id === owner || p.owner === owner).map((p) => p.id);
+        const left = [...new Set([...(round.left ?? []), ...ids])];
+        let r: Round = { ...round, left, voteCalls: (round.voteCalls ?? []).filter((id) => !ids.includes(id)), votes: Object.fromEntries(Object.entries(round.votes).filter(([v]) => !ids.includes(v))) };
+        if (r.phase === 'deal') {
+          // No se espera a que vean su carta.
+          r = { ...r, ready: [...new Set([...r.ready, ...ids.filter((id) => r.order.includes(id))])] };
+          set({ round: r });
+          if (get().screen === 'deal' && r.order.every((id) => r.ready.includes(id))) get().beginDiscuss();
+          return;
+        }
+        if (r.phase === 'discuss') {
+          set({ round: r });
+          if (voteCallStatus(r).all) return get().openVote();
+          // Si era su turno, pasa al siguiente.
+          if (left.includes(r.order[r.turn])) get().nextTurn();
+          return;
+        }
+        if (r.phase === 'vote') {
+          set({ round: r });
+          const voters = votersOf(r);
+          if (voters.length && voters.every((id) => r.votes[id])) get().closeVote();
+          return;
+        }
+        // Última oportunidad: se reacomoda el turno de adivinar sin quienes se fueron.
+        if (r.step === 'guess') {
+          const before = guessersOf(round);
+          const now = guessersOf(r);
+          const cur = before[round.guessIdx];
+          const idx = now.includes(cur) ? now.indexOf(cur) : Math.min(before.slice(0, round.guessIdx).filter((id) => now.includes(id)).length, now.length - 1);
+          r = now.length ? { ...r, guessIdx: idx, guessPick: r.guessPicks?.[now[idx]] } : { ...r, step: 'truth', guessPick: undefined };
+        }
+        set({ round: r });
       },
 
       vote(accused, nobody, tallyInfo) {
@@ -663,6 +748,7 @@ export const useGame = create<State>()(
             lastTally: tallyInfo,
             votes: {},
             voteN: round.voteN + 1,
+            voteCalls: [],
             phase: 'reveal',
             step: 'verdict',
             guessIdx: 0,
@@ -677,11 +763,12 @@ export const useGame = create<State>()(
         const { round, online } = get();
         if (!round || round.phase !== 'vote') return;
         const { alive } = roundStatus(round);
-        if (!alive.includes(voter) || (target !== NOBODY && !alive.includes(target))) return;
+        const voters = votersOf(round);
+        if (!voters.includes(voter) || (target !== NOBODY && !alive.includes(target))) return;
         const votes = { ...round.votes, [voter]: target };
         set({ round: { ...round, votes } });
-        // En sala, cuando ya votaron todos se cierra sola.
-        if (online && alive.every((id) => votes[id])) get().closeVote();
+        // En sala, cuando ya votaron todos (los que siguen en la sala) se cierra sola.
+        if (online && voters.every((id) => votes[id])) get().closeVote();
       },
 
       closeVote() {
@@ -698,9 +785,9 @@ export const useGame = create<State>()(
 
       guess(id) {
         const { round } = get();
-        if (link.guest) return link.send({ a: 'guess', id, as: round ? round.impostors.filter((i) => round.accused.includes(i))[round.guessIdx] : undefined });
+        if (link.guest) return link.send({ a: 'guess', id, as: round ? guessersOf(round)[round.guessIdx] : undefined });
         if (!round || round.step !== 'guess' || round.guessPick) return;
-        const guesser = round.impostors.filter((i) => round.accused.includes(i))[round.guessIdx];
+        const guesser = guessersOf(round)[round.guessIdx];
         if (!guesser) return;
         set({ round: { ...round, guessPick: id, guessPicks: { ...round.guessPicks, [guesser]: id }, guessed: { ...round.guessed, [guesser]: id === round.civil } } });
       },
@@ -708,8 +795,7 @@ export const useGame = create<State>()(
       nextGuess() {
         const { round } = get();
         if (!round || link.guest) return;
-        const caught = round.impostors.filter((i) => round.accused.includes(i));
-        if (round.guessIdx + 1 < caught.length) return set({ round: { ...round, guessIdx: round.guessIdx + 1, guessPick: undefined } });
+        if (round.guessIdx + 1 < guessersOf(round).length) return set({ round: { ...round, guessIdx: round.guessIdx + 1, guessPick: undefined } });
         // Ya eligieron todos: ahora sí se revela la verdad.
         set({ round: { ...round, step: 'truth', guessPick: undefined } });
       },
@@ -730,6 +816,7 @@ export const useGame = create<State>()(
           clock: clockFor(round.roundTime, talks),
           lastVote: undefined,
           lastTally: undefined,
+          voteCalls: [],
           startedAt: Date.now(),
           pendingChallenge: undefined,
           // Si atraparon a uno de más, el "impostor extra" dejó de ser secreto.
@@ -894,6 +981,12 @@ export const useGame = create<State>()(
         const unique = uniqueName(players, name, id);
         if (existing) {
           if (existing.name !== unique) set({ players: players.map((p) => (p.id === id ? { ...p, name: unique } : p)) });
+          // Volvió a entrar a media ronda: regresa a la partida con quienes juegan en su teléfono.
+          const { round } = get();
+          if (round?.left?.includes(id)) {
+            const back = players.filter((p) => p.id === id || p.owner === id).map((p) => p.id);
+            set({ round: { ...round, left: round.left.filter((x) => !back.includes(x)) } });
+          }
           return true;
         }
         if (players.length >= MAX_PLAYERS) return false;
@@ -942,11 +1035,13 @@ export const useGame = create<State>()(
           case 'vote':
             return screen === 'vote' ? s.castVote(as, a.target) : undefined;
           case 'guess': {
-            const guesser = round.impostors.filter((i) => round.accused.includes(i))[round.guessIdx];
+            const guesser = guessersOf(round)[round.guessIdx];
             return screen === 'reveal' && guesser === as && BY_ID[a.id] ? s.guess(a.id) : undefined;
           }
           case 'cursed':
             return round.cursedWord && round.order.includes(a.player) && !round.cursed.includes(a.player) ? s.toggleCursed(a.player) : undefined;
+          case 'callVote':
+            return screen === 'discuss' && typeof a.on === 'boolean' ? s.callVote(as, a.on) : undefined;
         }
       },
     }),

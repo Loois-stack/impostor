@@ -13,7 +13,7 @@ import { PTS } from '../engine/scoring';
 import { NOBODY } from '../engine/vote';
 import { burst, flash, shake } from '../fx/fx';
 import { useSeat } from '../net/state';
-import { pendingJudgments, roundStatus, useGame, type Player } from '../store/game';
+import { guessersOf, pendingJudgments, roundStatus, useGame, type Player } from '../store/game';
 import { secretEvent } from '../store/view';
 import { LastChance } from './LastChance';
 
@@ -190,7 +190,7 @@ export function Reveal() {
     finishRound();
   };
   // Los impostores atrapados adivinan ANTES de ver la verdad (si no, ya sabrían la respuesta).
-  const lastChance = caught.length > 0 && !round.nobodyVote;
+  const lastChance = guessersOf(round).length > 0 && !round.nobodyVote;
   const guessPicks = round.guessPicks ?? {};
 
   const allJudged = judgments.every((j) => (j.mission ? round.missionResults[j.player] : round.challengeResults[j.player]) !== undefined);
@@ -290,7 +290,7 @@ export function Reveal() {
                         setStep('guess');
                       }}
                     >
-                      🎯 Última oportunidad {caught.length > 1 ? 'de los impostores' : 'del impostor'}
+                      🎯 Última oportunidad {guessersOf(round).length > 1 ? 'de los impostores' : 'del impostor'}
                     </Button>
                   ) : (
                     <Button onClick={() => setStep('truth')}>Ver la verdad 👁️</Button>
