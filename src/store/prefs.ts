@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type Skin = 'neon' | 'fiesta' | 'noir';
+/** Qué reacciones suenan en este teléfono: las de todos, solo las propias o ninguna. */
+export type ReactSound = 'all' | 'mine' | 'off';
 
 /**
  * Preferencias de ESTE teléfono (sonido, apariencia, nombre en salas). Van aparte del estado
@@ -11,6 +13,7 @@ interface Prefs {
   sound: boolean;
   music: boolean;
   vibration: boolean;
+  reactSound: ReactSound;
   skin: Skin;
   /** Identidad estable del teléfono en las salas (para reconectarse sin perder el lugar). */
   deviceId: string;
@@ -42,6 +45,7 @@ export const usePrefs = create<Prefs>()(
       sound: true,
       music: true,
       vibration: true,
+      reactSound: 'all',
       skin: 'neon',
       deviceId: randomId(),
       name: '',

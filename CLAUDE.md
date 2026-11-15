@@ -46,6 +46,7 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 - `src/net/`: multijugador con PeerJS (WebRTC). El anfitrión tiene la partida de verdad; los invitados reciben una copia y mandan acciones (`NetAction` en `link.ts`) que el anfitrión valida en `remote()`. Si cambian los mensajes, sube `PROTOCOL` en `net.ts`.
 - `src/fx/`: fondo animado, temas visuales (Neón, Fiesta, Casino), escenas de emojis, lluvias, reacciones y partículas.
 - `src/audio/sfx.ts`: **todos los sonidos y la música se sintetizan con Web Audio**. Son originales, sin archivos ni licencias y funcionan sin internet. Mantener esa regla para sonidos nuevos.
+- `src/audio/reactions.ts`: sonido de cada reacción. Las voces (risas, grito, "mmm", "¿eeeh?") usan `speak()`, un sintetizador de formantes (pulso glotal + 3 filtros por vocal + aire para la "j"); los efectos usan ruido y osciladores. Volúmenes igualados en `REACTION_VOICES` (medidos para bocina de celular). Se oyen en todos los teléfonos según `prefs.reactSound`; máximo 3 a la vez. **No usar sonidos de memes ni grabaciones ajenas** (derechos de autor): todo se crea desde cero.
 - `src/services/`: fotos para jugar sin conexión (CORS, con reintentos ante el límite 429 de Wikimedia), actualizaciones y pantalla encendida.
 
 ## Reglas de diseño que hay que respetar
@@ -81,10 +82,11 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 5. Un sobre personal por jugador (8 diseños, 6 brillos por rareza), galería de sobres en Ajustes y "Última oportunidad" con animación propia. El impostor atrapado ahora adivina ANTES de ver la verdad (antes veía la carta civil en "la verdad" y luego adivinaba).
 6. Sala: botón rojo para pedir votación (mayoría → se vota al terminar la vuelta) y salir de la partida con confirmación sin trabar la ronda. También se arregló que al salir de una sala la pantalla quedara en negro y que la app regresara siempre a "Entrar a una sala".
 7. Sala: si se desconectan todos, el anfitrión vuelve a la sala con la ronda en pausa; los invitados sin anfitrión pueden reintentar, ir al menú o volver a entrar con el código puesto.
+8. Reacciones con sonido propio hecho desde cero (risa sintetizada con tres estilos, grito, navaja, aplausos, etc.) y movimiento al compás. Ajuste "De todos / Solo mías / Apagados" y tablero para probarlas. Se arregló que quien mandaba una reacción en sala la viera dos veces.
 
 ## Pendiente o sin verificar
 
-- No se ha probado en celulares reales: sensación al cortar el sobre, brillo y sonido del sobre personal, vibración y salas con el servidor público de PeerJS.
+- No se ha probado en celulares reales: sensación al cortar el sobre, brillo y sonido del sobre personal, sonidos de reacciones (sobre todo cómo suena la voz sintetizada en la bocina), vibración y salas con el servidor público de PeerJS.
 - La partida de 10 jugadores con 3 impostores funcionó como se esperaba: cada impostor tiene carta distinta, lo cual al principio confundió a la mesa.
 
 ## Preferencias del dueño

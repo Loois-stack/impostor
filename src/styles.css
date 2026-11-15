@@ -1825,6 +1825,94 @@ input {
   font-size: 44px;
   filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
 }
+/* Cada reacción se mueve al compás de su sonido. */
+.rx {
+  display: inline-block;
+  transform-origin: 50% 60%;
+}
+.rx-laugh { animation: rx-laugh 0.16s ease-in-out 9 alternate; }
+@keyframes rx-laugh {
+  from { transform: translateY(2px) rotate(-7deg) scale(1, 0.96); }
+  to { transform: translateY(-5px) rotate(7deg) scale(1, 1.04); }
+}
+.rx-scream { animation: rx-scream 0.05s linear 0.15s 20 alternate; }
+@keyframes rx-scream {
+  from { transform: translateX(-3px) scale(1.12); }
+  to { transform: translateX(3px) scale(1.18); }
+}
+.rx-think { animation: rx-think 1.2s ease-in-out both; }
+@keyframes rx-think {
+  0% { transform: rotate(0); }
+  30% { transform: rotate(-14deg); }
+  60% { transform: rotate(9deg); }
+  100% { transform: rotate(-4deg); }
+}
+.rx-brow { animation: rx-brow 0.75s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes rx-brow {
+  0% { transform: rotate(0) scale(1); }
+  25% { transform: rotate(-10deg) scale(0.92); }
+  100% { transform: rotate(12deg) scale(1.12); }
+}
+.rx-knife { animation: rx-knife 0.55s cubic-bezier(0.2, 0.9, 0.2, 1) both; }
+@keyframes rx-knife {
+  0% { transform: rotate(-120deg) scale(0.6); filter: brightness(1); }
+  45% { transform: rotate(25deg) scale(1.25); filter: brightness(2.4); }
+  100% { transform: rotate(0) scale(1); filter: brightness(1); }
+}
+.rx-eyes { animation: rx-eyes 0.7s ease-in-out both; }
+@keyframes rx-eyes {
+  0% { transform: translateX(0); }
+  12% { transform: translateX(-12px); }
+  32% { transform: translateX(-12px); }
+  42% { transform: translateX(12px); }
+  80% { transform: translateX(12px); }
+  100% { transform: translateX(0); }
+}
+.rx-peek { animation: rx-gulp 0.3s ease-out, rx-shiver 0.07s linear 0.3s 10 alternate; }
+@keyframes rx-gulp {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(0.8, 1.14); }
+}
+@keyframes rx-shiver {
+  from { transform: translateX(-2px) rotate(-4deg); }
+  to { transform: translateX(2px) rotate(4deg); }
+}
+.rx-honk { animation: rx-honk 0.25s ease-in-out 2; }
+@keyframes rx-honk {
+  0%, 100% { transform: scale(1); }
+  30% { transform: scale(1.32, 0.74); }
+  60% { transform: scale(0.9, 1.14); }
+}
+.rx-fire { animation: rx-fire 0.11s ease-in-out 12 alternate; transform-origin: 50% 100%; }
+@keyframes rx-fire {
+  from { transform: scale(1, 1) skewX(-3deg); }
+  to { transform: scale(0.93, 1.14) skewX(3deg); }
+}
+.rx-clap { animation: rx-clap 0.2s ease-out 7; }
+@keyframes rx-clap {
+  0%, 100% { transform: scale(1); }
+  25% { transform: scale(0.8) rotate(-6deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rx { animation: none !important; }
+}
+/* Ajustes: probar los sonidos de las reacciones. */
+.rx-try {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.rx-try button {
+  font-size: 28px;
+  padding: 8px 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  line-height: 1;
+}
+.rx-try button:active {
+  background: rgba(255, 255, 255, 0.14);
+}
 .reaction-who {
   position: absolute;
   right: -10px;

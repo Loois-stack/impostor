@@ -212,7 +212,6 @@ export function ReactFab({ onReact }: { onReact: (e: string) => void }) {
                 whileTap={{ scale: 1.4 }}
                 onClick={() => {
                   haptic(8);
-                  sfx.select();
                   onReact(e);
                   keepOpen();
                 }}

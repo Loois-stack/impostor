@@ -1,16 +1,62 @@
 import { motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+import { reactionSound } from '../audio/reactions';
 import { sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
 import { PackGallery } from '../components/PackGallery';
-import { Avatar, Button, Sheet, Toggle, TopBar } from '../components/ui';
+import { Avatar, Button, Segmented, Sheet, Toggle, TopBar } from '../components/ui';
 import { ITEMS } from '../data';
 import { ACHIEVEMENTS } from '../engine/achievements';
 import { levelFromXp } from '../engine/scoring';
+import { floatReaction, REACTIONS } from '../fx/reactions';
 import { SKIN_IDS, SKINS, skinVars } from '../fx/skins';
 import { downloadAll, offlineStatus, type OfflineStatus } from '../services/images';
 import { AVATAR_CHOICES, useGame } from '../store/game';
 import { usePrefs } from '../store/prefs';
+
+/** Sonidos de las reacciones: cuáles suenan en este teléfono y un tablero para probarlos. */
+function ReactionSounds() {
+  const mode = usePrefs((s) => s.reactSound);
+  const sound = usePrefs((s) => s.sound);
+  const set = usePrefs((s) => s.set);
+  return (
+    <div className="panel stack" style={{ gap: 8 }}>
+      <b>😂 Sonidos de las reacciones</b>
+      <div className="dim" style={{ fontSize: 13, lineHeight: 1.4 }}>
+        Cada reacción tiene su propio sonido, hecho desde cero en el teléfono (sin grabaciones). La risa nunca suena igual dos veces. En una sala lo oyen todos.
+      </div>
+      <Segmented
+        id="reactSound"
+        value={mode}
+        onChange={(reactSound) => set({ reactSound })}
+        options={[
+          { value: 'all', label: 'De todos' },
+          { value: 'mine', label: 'Solo mías' },
+          { value: 'off', label: 'Apagados' },
+        ]}
+      />
+      <div className="rx-try">
+        {REACTIONS.map((e) => (
+          <motion.button
+            key={e}
+            whileTap={{ scale: 1.3 }}
+            aria-label={`Escuchar ${e}`}
+            onClick={() => {
+              sfx.unlock();
+              floatReaction(e);
+              if (!reactionSound(e, true)) sfx.select();
+            }}
+          >
+            {e}
+          </motion.button>
+        ))}
+      </div>
+      <div className="dim" style={{ fontSize: 12 }}>
+        {sound ? 'Toca uno para escucharlo.' : 'Prende los efectos de sonido para escucharlos.'}
+      </div>
+    </div>
+  );
+}
 
 /** Descarga de imágenes para jugar sin internet, con pausa y progreso que se conserva. */
 function OfflinePanel() {
@@ -151,6 +197,7 @@ export function SettingsScreen() {
           />
           <Toggle emoji="🎵" on={prefs.music} onChange={(music) => prefs.set({ music })} title="Música de fondo" desc="Generada en vivo: cambia en el menú, la partida, la votación y el terror." />
           <Toggle emoji="📳" on={prefs.vibration} onChange={(vibration) => prefs.set({ vibration })} title="Vibración" />
+          <ReactionSounds />
 
           <OfflinePanel />
 

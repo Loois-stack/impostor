@@ -465,8 +465,9 @@ function relayReaction(e: unknown, from: string) {
   const recent = (lastReact.get(from) ?? []).filter((x) => t - x < 2000);
   if (recent.length >= 5) return;
   lastReact.set(from, [...recent, t]);
-  showReaction(e, from);
-  for (const c of conns.values()) send(c, { t: 'react', e, from });
+  showReaction(e, from, from === publicId(usePrefs.getState().deviceId));
+  // Quien la mandó ya la vio (y la oyó) en su teléfono.
+  for (const [id, c] of conns) if (id !== from) send(c, { t: 'react', e, from });
 }
 
 /** Lanza una reacción: en sala la ven todos los teléfonos; con un solo teléfono, solo este. */
@@ -474,7 +475,7 @@ export function react(e: string) {
   const net = useNet.getState();
   const me = publicId(usePrefs.getState().deviceId);
   if (net.role === 'guest') {
-    showReaction(e, me);
+    showReaction(e, me, true);
     send(hostConn, { t: 'react', e });
   } else if (net.role === 'host') relayReaction(e, me);
   else showReaction(e);

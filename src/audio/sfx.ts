@@ -47,6 +47,15 @@ interface MusicNote {
 
 type Voice = (step: number, when: number, spb: number) => void;
 
+/** Lo necesario para sintetizar un sonido nuevo: contexto, salida, reverb, ruido y distorsión. */
+export interface Kit {
+  ctx: AudioContext;
+  master: AudioNode;
+  verb: AudioNode;
+  noise: AudioBuffer;
+  shaper: AudioNode;
+}
+
 class Sfx {
   enabled = true;
   musicOn = true;
@@ -203,6 +212,12 @@ class Sfx {
 
   private get ok() {
     return this.enabled && this.ctx && this.ctx.state === 'running';
+  }
+
+  /** Piezas para armar sonidos fuera de esta clase (las reacciones). `null` si no hay sonido. */
+  kit(): Kit | null {
+    if (!this.ok) return null;
+    return { ctx: this.ctx!, master: this.master, verb: this.verbIn, noise: this.noiseBuf, shaper: this.shaper };
   }
 
   private out(g: GainNode, wet = 0.2, dist = false) {
