@@ -27,6 +27,7 @@ import { Score } from './screens/Score';
 import { SettingsScreen } from './screens/Settings';
 import { Setup } from './screens/Setup';
 import { Vote } from './screens/Vote';
+import { applyUpdate, useUpdate } from './services/update';
 import { keepAwake } from './services/wake';
 import { IN_ROUND, useGame, type Screen } from './store/game';
 import { usePrefs } from './store/prefs';
@@ -69,6 +70,42 @@ function NetBanner() {
             📡
           </motion.span>
           {status === 'connecting' ? 'Conectando con la sala…' : 'Se cortó la conexión. Reconectando…'}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** Pantallas donde se puede recargar sin cortar una ronda. */
+const CALM: Screen[] = ['home', 'players', 'setup', 'settings', 'howto', 'custom', 'events', 'online', 'lobby', 'score', 'awards'];
+
+/**
+ * Aviso de versión nueva. En el menú se instala sola; en la sala o el marcador se ofrece un
+ * botón (recargar reconecta solo). A media ronda espera a que termine.
+ */
+function UpdateBanner({ screen, online }: { screen: Screen; online: boolean }) {
+  const { ready, applying } = useUpdate();
+  const calm = CALM.includes(screen);
+  const auto = calm && !online && (screen === 'home' || screen === 'settings' || screen === 'howto');
+  useEffect(() => {
+    if (!ready || !auto) return;
+    const t = setTimeout(applyUpdate, 1800);
+    return () => clearTimeout(t);
+  }, [ready, auto]);
+  return (
+    <AnimatePresence>
+      {ready && calm && (
+        <motion.div className="update-banner" initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }}>
+          <span style={{ fontSize: 22 }}>✨</span>
+          <span className="grow">
+            <b>{applying || auto ? 'Actualizando el juego…' : 'Hay una versión nueva'}</b>
+            {!applying && !auto && <small>Tarda un segundo. {online ? 'La sala se reconecta sola.' : 'No se pierde nada.'}</small>}
+          </span>
+          {!applying && !auto && (
+            <button className="update-btn" onClick={applyUpdate}>
+              Actualizar
+            </button>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
@@ -175,6 +212,7 @@ export function App() {
         </motion.div>
       </AnimatePresence>
       <NetBanner />
+      <UpdateBanner screen={safe} online={online} />
       <SceneCard title={title} />
       {REACT_ON.includes(safe) && (safe !== 'lobby' || online) && <ReactFab key={safe} onReact={react} />}
       <ReactionLayer />

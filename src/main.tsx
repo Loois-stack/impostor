@@ -1,6 +1,5 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 // Fuentes empaquetadas con la app: así se ven igual sin internet.
 import '@fontsource/bebas-neue/latin-400.css';
 import '@fontsource/creepster/latin-400.css';
@@ -11,10 +10,11 @@ import '@fontsource/inter/latin-900.css';
 import { App } from './App';
 import { bootNet } from './net/net';
 import { dropLegacyCache } from './services/images';
+import { startUpdates } from './services/update';
 import { useGame } from './store/game';
 import './styles.css';
 
-registerSW({ immediate: true });
+startUpdates();
 dropLegacyCache();
 bootNet();
 

@@ -45,7 +45,8 @@ export default defineConfig(({ mode }) => ({
     react(),
     securityHeaders(csp(peerHost(loadEnv(mode, process.cwd(), 'VITE_')))),
     VitePWA({
-      registerType: 'autoUpdate',
+      // La app avisa cuando hay versión nueva y la instala sola fuera de la ronda (ver services/update.ts).
+      registerType: 'prompt',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'IMPOSTOR — ¿Quién miente?',
