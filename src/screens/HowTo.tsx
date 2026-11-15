@@ -4,7 +4,7 @@ import { TopBar, stagger } from '../components/ui';
 import { useGame } from '../store/game';
 
 const STEPS = [
-  ['🃏', 'Reparto', 'Con un teléfono: pásenlo y cada quien mantiene presionada su carta en secreto. Con varios teléfonos: cada quien la ve en el suyo.'],
+  ['🃏', 'Reparto', 'Cada ronda llega en un sobre: córtenlo deslizando el dedo por la línea punteada y vean cómo se barajan las cartas. Con un teléfono, pásenlo y cada quien mantiene presionada su carta en secreto; con varios, cada quien la ve en el suyo.'],
   ['🔪', 'El impostor', 'Todos tienen la MISMA carta… menos el impostor, que tiene algo PARECIDO pero distinto (o nada, en modo clásico). A veces casi idéntico y puede camuflarse; a veces tendrá que jugársela.'],
   ['👥', 'Varios impostores', 'Con más jugadores puede haber más impostores (en automático: 1 hasta 5 jugadores, 2 hasta 8, 3 hasta 11…). Cada uno tiene una carta distinta y no sabe quiénes son los otros, salvo que activen el modo equipo: ahí se conocen, comparten carta y ganan juntos.'],
   ['🗣️', 'Pistas', 'Por turnos, cada jugador dice una palabra o frase sobre su carta. Muy obvia = el impostor la descubre. Muy vaga = sospechan de ti.'],

@@ -13,6 +13,7 @@ Juego de fiesta en español. Todos reciben la misma carta… menos el impostor, 
 - **Modo +18** opcional: agrega groserías y albures mexicanos. Solo palabras, dirigidas a la carta.
 - **Eliminación** revisada: el reloj se acorta en cada nueva búsqueda, cada inocente echado por error baja el premio y los eliminados ya no hablan ni votan.
 - **Votación** en grupo o en secreto (pasando el teléfono, o cada quien en el suyo), con conteo animado y empates.
+- **Sobre de cartas** en cada ronda: se corta deslizando el dedo por la línea punteada, las cartas salen y se barajan en abanico, riffle, puente y corte. Sonidos originales sintetizados en la app: crujido metálico, rasgado, cartas deslizándose y barajeo.
 - Ruleta de verdad, cartas con marco por categoría, tres **temas visuales** (Neón, Fiesta, Casino), música generada en vivo, puntos, rachas, niveles, logros y "Premios de la noche".
 - **Todo se mueve**: avatares que respiran, hablan en su turno, tiemblan cuando los acusan y saltan cuando ganan; emojis con personalidad; escenas de fondo según la categoría o el evento (la fiesta mexicana trae tacos, chiles, piñatas y trompetas); títulos que barren la pantalla al cambiar de fase; lluvias de emojis en los momentos clave y **reacciones** (😂😱🤔🔪…) que en sala ven todos los teléfonos.
 - App instalable (PWA) que funciona **sin internet** con un solo teléfono: fuentes y sonidos van dentro de la app, y las fotos se pueden descargar desde Ajustes.

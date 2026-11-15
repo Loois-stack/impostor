@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
 import { PlayerCard } from '../components/PlayerCard';
-import { ShuffleDeck } from '../components/ShuffleDeck';
+import { PackOpening } from '../components/PackOpening';
 import { Avatar, Button, Handoff } from '../components/ui';
 import { CAT } from '../data/categories';
 import { THEME_BY_ID } from '../data/themes';
@@ -13,6 +13,23 @@ import { useGame } from '../store/game';
 export function Deal() {
   const { online } = useSeat();
   return online ? <DealOnline /> : <DealLocal />;
+}
+
+/** El sobre de la ronda, con los colores y el nombre de su categoría o tema. */
+function RoundPack({ onDone }: { onDone: () => void }) {
+  const round = useGame((s) => s.round)!;
+  const theme = round.theme ? THEME_BY_ID[round.theme] : undefined;
+  const c = CAT[round.cat];
+  return (
+    <PackOpening
+      count={round.order.length}
+      color={theme?.color ?? c.color}
+      color2={theme ? '#2a1a4a' : c.color2}
+      title={theme?.name ?? c.name}
+      emoji={theme?.emoji ?? c.emoji}
+      onDone={onDone}
+    />
+  );
 }
 
 /** Un solo teléfono: se pasa de mano en mano y cada quien ve su carta en secreto. */
@@ -56,7 +73,7 @@ function DealLocal() {
       <AnimatePresence mode="wait">
         {phase === 'shuffle' ? (
           <motion.div key="shuffle" className="grow center content" exit={{ opacity: 0 }}>
-            <ShuffleDeck onDone={() => setPhase('pass')} />
+            <RoundPack onDone={() => setPhase('pass')} />
           </motion.div>
         ) : phase === 'pass' ? (
           <motion.div
@@ -192,7 +209,7 @@ function DealOnline() {
       <AnimatePresence mode="wait">
         {shuffling ? (
           <motion.div key="shuffle" className="grow center content" exit={{ opacity: 0 }}>
-            <ShuffleDeck onDone={() => setShuffling(false)} />
+            <RoundPack onDone={() => setShuffling(false)} />
           </motion.div>
         ) : !mine.length ? (
           <motion.div key="watch" className="grow center content" style={{ gap: 12 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

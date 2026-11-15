@@ -1954,3 +1954,278 @@ input {
   background: var(--accent);
   flex-shrink: 0;
 }
+
+/* ---------- Sobre de cartas ---------- */
+.pack-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 4px;
+}
+.pack-caption {
+  font-size: 34px;
+  min-height: 36px;
+  text-align: center;
+}
+.pack-hint {
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  min-height: 18px;
+}
+.pack-scene {
+  --pack-w: min(56vw, 215px, calc((100dvh - 330px) * 0.5));
+  --pack-h: calc(var(--pack-w) / 0.62);
+  --pack-top: 120px;
+  position: relative;
+  width: 100%;
+  height: calc(var(--pack-top) + var(--pack-h) + 16px);
+}
+.pack-deck {
+  position: absolute;
+  left: 50%;
+  width: 0;
+  height: 0;
+  z-index: 1;
+  perspective: 900px;
+}
+.pack-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-style: preserve-3d;
+}
+.pack-wrap {
+  position: absolute;
+  left: 50%;
+  top: var(--pack-top);
+  width: var(--pack-w);
+  height: var(--pack-h);
+  margin-left: calc(var(--pack-w) / -2);
+  z-index: 2;
+}
+.pack-float {
+  animation: pack-float 3.2s ease-in-out infinite;
+}
+@keyframes pack-float {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-8px) rotate(1.5deg); }
+}
+.pack {
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(0 26px 30px rgba(0, 0, 0, 0.6));
+  touch-action: none;
+}
+.pack-body,
+.pack-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+}
+.pack-body {
+  top: 17%;
+  bottom: 0;
+  border-radius: 0 0 6px 6px;
+}
+.pack-strip {
+  top: 0;
+  height: 17%;
+  z-index: 2;
+  transform-origin: 100% 100%;
+}
+.pack-slice {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.pack-art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--pc) 70%, #fff) 0%,
+    var(--pc) 20%,
+    color-mix(in srgb, var(--pc2) 75%, #000) 68%,
+    color-mix(in srgb, var(--pc2) 60%, #000) 100%
+  );
+}
+.pack-art::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 9px);
+}
+.pack-foil {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: overlay;
+  background: linear-gradient(115deg, transparent 28%, rgba(255, 255, 255, 0.7) 44%, rgba(255, 0, 200, 0.35) 50%, rgba(0, 255, 255, 0.4) 56%, transparent 72%);
+  background-size: 300% 300%;
+  animation: foil 3.6s ease-in-out infinite;
+}
+@keyframes foil {
+  0% { background-position: 100% 0; }
+  60%, 100% { background-position: 0 100%; }
+}
+.pack-crimp {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6.5%;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.4) 0 2px, rgba(0, 0, 0, 0.28) 2px 5px), linear-gradient(rgba(255, 255, 255, 0.18), rgba(0, 0, 0, 0.25));
+}
+.pack-crimp.top {
+  top: 0;
+}
+.pack-crimp.bottom {
+  bottom: 0;
+}
+.pack-rosette {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 120%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0.13) 0 5deg, transparent 5deg 12deg);
+  animation: spin 50s linear infinite;
+}
+.pack-badge {
+  position: absolute;
+  top: 21%;
+  right: 5%;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  color: #2a1600;
+  background: radial-gradient(circle at 35% 30%, #fff6c8, #ffd23d 55%, #e19a00);
+  clip-path: polygon(50% 0, 61% 18%, 82% 10%, 80% 32%, 100% 40%, 85% 55%, 96% 75%, 74% 77%, 70% 100%, 52% 86%, 33% 100%, 27% 79%, 5% 78%, 15% 57%, 0 40%, 20% 32%, 17% 10%, 38% 18%);
+  transform: rotate(12deg);
+  line-height: 1;
+}
+.pack-badge b {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 400;
+}
+.pack-badge small {
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.pack-center {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 27%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.pack-eye {
+  font-size: clamp(46px, 14vw, 62px);
+  line-height: 1;
+  filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.6)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+}
+.pack-logo {
+  font-size: clamp(32px, 10vw, 42px);
+  letter-spacing: 0.04em;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.35), 0 0 22px color-mix(in srgb, var(--pc) 80%, #fff);
+}
+.pack-sub {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.pack-edition {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 15%;
+  padding: 6px 4px;
+  text-align: center;
+  font-size: 10.5px;
+  line-height: 1.25;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.42);
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+}
+.pack-fine {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 8.5%;
+  font-size: 8.5px;
+  text-align: center;
+  opacity: 0.75;
+}
+.pack-line {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 17%;
+  border-top: 2px dashed rgba(255, 255, 255, 0.75);
+  z-index: 3;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+.pack-tear {
+  position: absolute;
+  left: 0;
+  top: calc(17% - 4px);
+  height: 8px;
+  z-index: 4;
+  pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0 4 L3 1 L6 6 L9 2 L12 4' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E") repeat-x left center / 12px 8px;
+  filter: drop-shadow(0 0 4px #fff);
+}
+.pack-glow {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 0;
+  height: 45%;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255, 255, 235, 0.95), rgba(255, 255, 235, 0.25) 40%, transparent 70%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+.pack-cutzone {
+  position: absolute;
+  left: -14px;
+  right: -14px;
+  top: calc(17% - 26px);
+  height: 52px;
+  z-index: 6;
+  touch-action: none;
+  cursor: grab;
+}
+.pack-scissors {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  font-size: 24px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pack-float,
+  .pack-foil,
+  .pack-rosette {
+    animation: none !important;
+  }
+}

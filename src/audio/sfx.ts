@@ -374,6 +374,106 @@ class Sfx {
     this.tone({ type: 'square', f: 1319, dur: 0.25, vol: 0.06, at: 0.08, wet: 0.2 });
   }
 
+  // ---------------- Sobre de cartas (sonidos originales, sintetizados desde cero) ----------------
+
+  /**
+   * Un "grano" de ruido muy corto. Muchos granos con tonos y volúmenes al azar suenan a
+   * plástico metálico crujiendo; en ráfagas densas, a algo rasgándose.
+   */
+  private grain(at: number, f: number, q: number, vol: number, dur: number, type: BiquadFilterType = 'bandpass') {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime + at;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const fl = ctx.createBiquadFilter();
+    fl.type = type;
+    fl.frequency.value = f;
+    fl.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(fl).connect(g).connect(this.master);
+    src.start(t, Math.random() * 1.8);
+    src.stop(t + dur + 0.01);
+  }
+
+  /** Crujido del sobre metálico al tocarlo o apretarlo. `amount` de 0 a 1. */
+  packCrinkle(amount = 0.5) {
+    if (!this.ok) return;
+    const n = 4 + Math.round(amount * 10);
+    for (let i = 0; i < n; i++) {
+      const at = Math.random() * 0.09;
+      this.grain(at, 2500 + Math.random() * 5000, 1 + Math.random() * 3, (0.1 + Math.random() * 0.3) * (0.5 + amount), 0.004 + Math.random() * 0.012);
+    }
+  }
+
+  /** Rasgado mientras el dedo corta el sobre. `speed` de 0 a 1 según qué tan rápido se corta. */
+  packTear(speed = 0.5) {
+    if (!this.ok) return;
+    const dur = 0.07;
+    const n = 6 + Math.round(speed * 14);
+    for (let i = 0; i < n; i++) {
+      const at = (i / n) * dur + Math.random() * 0.006;
+      this.grain(at, 1200 + Math.random() * 3200, 0.8 + Math.random() * 2, 0.14 + Math.random() * 0.26 * (0.6 + speed), 0.006 + Math.random() * 0.01);
+    }
+    // Cuerpo grave del plástico estirándose.
+    this.grain(0, 520 + speed * 300, 0.9, 0.12 + speed * 0.1, dur);
+  }
+
+  /** El corte termina: rasgón final, la tira sale volando y el sobre se abre con un "pop". */
+  packRip() {
+    if (!this.ok) return;
+    // Rasgón: ráfaga de granos cada vez más densa y aguda.
+    const n = 46;
+    for (let i = 0; i < n; i++) {
+      const p = i / n;
+      this.grain(p * p * 0.32, 900 + p * 3800 + Math.random() * 900, 1.2, 0.08 + p * 0.16, 0.008 + Math.random() * 0.012);
+    }
+    this.noise({ dur: 0.34, vol: 0.18, filter: 'bandpass', f: 800, f2: 4200, q: 1.4, attack: 0.03, wet: 0.08 });
+    // Pop del aire al abrirse.
+    this.tone({ type: 'sine', f: 160, f2: 55, dur: 0.18, vol: 0.32, at: 0.3, wet: 0.1 });
+    this.noise({ dur: 0.25, vol: 0.14, filter: 'highpass', f: 3000, f2: 9000, at: 0.3, attack: 0.01, wet: 0.3 });
+    // Destello: la magia del sobre recién abierto.
+    [1568, 2093, 2637, 3136].forEach((f, i) => this.tone({ type: 'triangle', f, dur: 0.6, vol: 0.05, at: 0.36 + i * 0.05, wet: 0.7 }));
+  }
+
+  /** Una carta deslizándose fuera del sobre. */
+  cardSlide(pitch = 1) {
+    if (!this.ok) return;
+    this.noise({ dur: 0.11, vol: 0.28, filter: 'bandpass', f: 2200 * pitch, f2: 5200 * pitch, q: 1.2, attack: 0.025, wet: 0.05 });
+    this.grain(0.1, 3800, 2, 0.14, 0.006);
+  }
+
+  /** Barajeo tipo "riffle": decenas de cartas golpeándose muy rápido, cada vez más lento. */
+  riffle(dur = 0.6) {
+    if (!this.ok) return;
+    let t = 0;
+    let gap = 0.009;
+    while (t < dur) {
+      this.grain(t, 2400 + Math.random() * 2400, 1.8, 0.24 + Math.random() * 0.18, 0.005 + Math.random() * 0.006);
+      // El "tac" de cada carta cayendo sobre la otra.
+      if (Math.random() < 0.5) this.grain(t + 0.001, 800 + Math.random() * 500, 2, 0.16, 0.007);
+      t += gap * (0.7 + Math.random() * 0.6);
+      gap *= 1.035;
+    }
+    // Las cartas se acomodan al final.
+    this.grain(dur + 0.02, 600, 0.8, 0.12, 0.05, 'lowpass');
+  }
+
+  /** Golpecitos del mazo contra la mesa para emparejarlo. */
+  deckTap() {
+    if (!this.ok) return;
+    this.tone({ type: 'sine', f: 190, f2: 90, dur: 0.07, vol: 0.4, wet: 0.05 });
+    this.grain(0, 700, 0.9, 0.2, 0.04, 'lowpass');
+    this.grain(0.002, 3200, 2, 0.05, 0.01);
+  }
+
+  /** Brillo cuando las cartas se abren en abanico. */
+  sparkle() {
+    if (!this.ok) return;
+    for (let i = 0; i < 6; i++) this.tone({ type: 'sine', f: 1800 + Math.random() * 2600, dur: 0.35, vol: 0.045, at: i * 0.05 + Math.random() * 0.02, wet: 0.8 });
+  }
+
   /** Ambiente de terror de fondo (rondas de horror). */
   startDrone() {
     if (!this.ok || this.drone) return;
