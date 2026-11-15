@@ -62,6 +62,7 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 - **Sala:** hasta 20 jugadores. Un teléfono puede llevar a jugadores sin celular (`owner`), que ven su carta y votan pasándolo.
 - **Pedir votación (sala):** cada jugador puede pedir votar (`round.voteCalls`, acción `callVote`). Con mayoría (`voteCallStatus`) se vota al terminar la vuelta; si lo piden todos, de inmediato. El anfitrión conserva "Votar ya, sin esperar" en el menú. Con un solo teléfono no cambia nada: el encargado decide.
 - **Salir de la partida (sala):** siempre con "¿Estás seguro?" (`LeaveGame.tsx`). Si un invitado sale a media ronda, el anfitrión lo marca en `round.left` (`leaveRound`): se salta su turno (`advance`), no se le espera para ver su carta ni para votar (`votersOf`), sigue siendo sospechoso y, si era impostor atrapado, ya no adivina (`guessersOf`). Si vuelve a entrar, regresa; si no, ya no recibe carta en la siguiente ronda. Si sale el anfitrión, se cierra la sala.
+- **Desconexiones (sala):** si todos los demás teléfonos llevan `ALONE_MS` sin conexión (contando desde la última vez que se supo de alguien), el anfitrión hace `pauseRound()`: vuelve a la sala y guarda `round.pausedAt`; `resumeRound()` ("Continuar ronda") recorre `startedAt` para que el reloj no pierda tiempo. El invitado sin anfitrión ve `ConnectionLost` (reintentar o ir al menú) y a los `GIVE_UP_MS` vuelve a "Entrar a una sala" con `lastCode` puesto.
 - **Sin internet:** con un solo teléfono el juego funciona sin conexión (las fuentes van empaquetadas). El modo de varios teléfonos sí necesita internet para encontrarse.
 - **CSP** en la versión publicada (`vite.config.ts`): solo código propio, fotos de Wikimedia y el servidor PeerJS.
 
@@ -79,6 +80,7 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 4. Sobre de cartas que se corta con el dedo, barajeo animado y sonidos del sobre sintetizados.
 5. Un sobre personal por jugador (8 diseños, 6 brillos por rareza), galería de sobres en Ajustes y "Última oportunidad" con animación propia. El impostor atrapado ahora adivina ANTES de ver la verdad (antes veía la carta civil en "la verdad" y luego adivinaba).
 6. Sala: botón rojo para pedir votación (mayoría → se vota al terminar la vuelta) y salir de la partida con confirmación sin trabar la ronda. También se arregló que al salir de una sala la pantalla quedara en negro y que la app regresara siempre a "Entrar a una sala".
+7. Sala: si se desconectan todos, el anfitrión vuelve a la sala con la ronda en pausa; los invitados sin anfitrión pueden reintentar, ir al menú o volver a entrar con el código puesto.
 
 ## Pendiente o sin verificar
 

@@ -162,6 +162,26 @@ describe('sala: pedir votación y salir de la partida', () => {
     expect(round().order).toHaveLength(5);
   });
 
+  it('pausa: el anfitrión vuelve a la sala y al continuar el reloj no perdió tiempo', () => {
+    g().setSettings({ roundTime: 180 });
+    toDiscuss();
+    const started = round().startedAt!;
+    g().pauseRound();
+    expect(g().screen).toBe('lobby');
+    expect(round().pausedAt).toBeDefined();
+    // Pasan 40 segundos en pausa.
+    useGame.setState({ round: { ...round(), pausedAt: round().pausedAt! - 40000 } });
+    g().resumeRound();
+    expect(g().screen).toBe('discuss');
+    expect(round().pausedAt).toBeUndefined();
+    expect(round().startedAt! - started).toBeGreaterThanOrEqual(40000);
+    // Pausar en la votación regresa a la votación.
+    g().openVote();
+    g().pauseRound();
+    g().resumeRound();
+    expect(g().screen).toBe('vote');
+  });
+
   it('entre rondas, salir deja el lugar libre', () => {
     toDiscuss();
     g().openVote();

@@ -14,14 +14,20 @@ interface NetState {
   error?: string;
   /** Jugadores conectados ahora mismo (ids). */
   present: string[];
+  /** Última sala en la que estuvo este teléfono (para volver a entrar con un toque). */
+  lastCode?: string;
+  /** Invitado: desde cuándo no hay conexión con el anfitrión (ms). */
+  lostSince?: number;
+  /** Invitado: si para entonces no volvió la conexión, se regresa a "Entrar a una sala". */
+  giveUpAt?: number;
 }
 
 /** Estado de la conexión. Solo rol y código se guardan, para poder volver a la sala tras recargar. */
 export const useNet = create<NetState>()(
-  persist(() => ({ role: 'off' as NetRole, code: '', status: 'idle' as NetStatus, present: [] as string[] }), {
+  persist<NetState, [], [], Pick<NetState, 'role' | 'code' | 'lastCode'>>(() => ({ role: 'off', code: '', status: 'idle', present: [] }), {
     name: 'impostor-net',
     version: 1,
-    partialize: (s) => ({ role: s.role, code: s.code }),
+    partialize: (s) => ({ role: s.role, code: s.code, lastCode: s.lastCode }),
   }),
 );
 

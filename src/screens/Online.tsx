@@ -23,9 +23,10 @@ const field = {
 export function Online() {
   const go = useGame((s) => s.go);
   const saved = usePrefs((s) => s.name);
-  const { status, error } = useNet();
+  const { status, error, lastCode } = useNet();
   const [name, setName] = useState(saved);
-  const [code, setCode] = useState(invite);
+  // Con el código del enlace o, si se cayó la conexión, el de la última sala: volver es un toque.
+  const [code, setCode] = useState(invite || lastCode || '');
   const busy = status === 'connecting';
   const named = name.trim().length > 0;
 

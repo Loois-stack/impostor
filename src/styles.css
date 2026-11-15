@@ -2933,3 +2933,13 @@ input {
   opacity: 0;
   pointer-events: none;
 }
+
+/* ---------- Sala: ronda en pausa ---------- */
+.paused-card {
+  border-color: rgba(255, 181, 71, 0.6);
+  background: linear-gradient(90deg, rgba(255, 181, 71, 0.16), rgba(255, 181, 71, 0.04));
+}
+.paused-card.alone {
+  border-color: rgba(255, 84, 112, 0.7);
+  background: linear-gradient(90deg, rgba(255, 46, 77, 0.2), rgba(255, 46, 77, 0.05));
+}

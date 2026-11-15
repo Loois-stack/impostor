@@ -25,7 +25,10 @@ const PREFIX = 'impostor-quien-miente-';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BEAT_MS = 4000;
 const DEAD_MS = 13000;
-const GIVE_UP_MS = 120000;
+/** Invitado: tras este tiempo sin el anfitrión, vuelve a "Entrar a una sala" con el código puesto. */
+const GIVE_UP_MS = 60000;
+/** Anfitrión: si todos los demás teléfonos llevan este tiempo desconectados, la ronda se pausa y vuelve a la sala. */
+const ALONE_MS = 8000;
 
 type Snapshot = Pick<ReturnType<typeof useGame.getState>, 'screen' | 'players' | 'profiles' | 'settings' | 'session' | 'round'>;
 
@@ -94,6 +97,10 @@ const lastSeen = new Map<string, number>();
 /** Invitado: conexión con el anfitrión. */
 let hostConn: DataConnection | null = null;
 let hostSeen = 0;
+/** Anfitrión: desde cuándo no queda ningún otro teléfono conectado. */
+let aloneSince = 0;
+/** Anfitrión: última vez que se supo de cualquier invitado. */
+let lastGuestSeen = 0;
 let lostAt = 0;
 let unsub: (() => void) | null = null;
 let beat = 0;
@@ -191,6 +198,7 @@ function onGuest(conn: DataConnection) {
     }
     if (!pid || conns.get(pid) !== conn) return;
     lastSeen.set(pid, Date.now());
+    lastGuestSeen = Date.now();
     if (m.t === 'act' && m.a && typeof m.a === 'object') useGame.getState().remote(pid, m.a);
     else if (m.t === 'react') relayReaction(m.e, pid);
     else if (m.t === 'bye') {
@@ -229,7 +237,31 @@ function hostLoop() {
       } else send(c, { t: 'ping' });
     }
     if (changed) schedule();
+    checkAlone(t);
   }, BEAT_MS);
+}
+
+/**
+ * Si se desconectaron todos los demás teléfonos a media partida, el anfitrión vuelve a la sala
+ * (donde está el código para que vuelvan a entrar) y la ronda queda en pausa.
+ */
+function checkAlone(t: number) {
+  const g = useGame.getState();
+  const me = publicId(usePrefs.getState().deviceId);
+  const phones = g.players.filter((p) => !p.owner && p.id !== me);
+  const others = [...conns.keys()].filter((id) => id !== me);
+  const playing = IN_ROUND.includes(g.screen) || g.screen === 'score' || g.screen === 'awards';
+  // Cuenta también si el que perdió internet es el anfitrión: igual nadie puede seguir jugando.
+  if (!phones.length || others.length || !playing) {
+    aloneSince = 0;
+    return;
+  }
+  // Se cuenta desde la última vez que se supo de alguien (notar que se cayeron ya toma unos segundos).
+  if (!aloneSince) aloneSince = lastGuestSeen && lastGuestSeen < t ? lastGuestSeen : t;
+  if (t - aloneSince >= ALONE_MS) {
+    aloneSince = 0;
+    g.pauseRound();
+  }
 }
 
 /** Crea una sala (o la reabre con el mismo código tras recargar la página). */
@@ -301,7 +333,7 @@ function onHost(raw: unknown) {
   switch (m.t) {
     case 'state':
       clock.offset = m.now - Date.now();
-      useNet.setState({ status: 'open', error: undefined, present: m.present });
+      useNet.setState({ status: 'open', error: undefined, present: m.present, lostSince: undefined, giveUpAt: undefined });
       useGame.setState({ ...m.s, online: true });
       break;
     case 'cards':
@@ -342,8 +374,16 @@ function dial() {
 
 function redial() {
   if (useNet.getState().role !== 'guest') return;
-  if (!lostAt) lostAt = Date.now();
-  if (Date.now() - lostAt > GIVE_UP_MS) return void exitGuest('Se perdió la conexión con la sala.');
+  if (!lostAt) {
+    lostAt = Date.now();
+    // El aviso cuenta desde la última vez que se supo del anfitrión (detectar la caída ya toma unos
+    // segundos); los reintentos sí tienen su tiempo completo desde ahora.
+    useNet.setState({ lostSince: Math.min(lostAt, hostSeen || lostAt), giveUpAt: lostAt + GIVE_UP_MS });
+  }
+  if (Date.now() - lostAt > GIVE_UP_MS) {
+    const { code } = useNet.getState();
+    return void exitGuest(`Se perdió la conexión con la sala ${code}. Si sigue abierta, toca "Entrar" para volver.`);
+  }
   if (useNet.getState().status === 'open') useNet.setState({ status: 'reconnecting' });
   clearTimeout(retry);
   retry = window.setTimeout(dial, 2500);
@@ -357,7 +397,7 @@ export async function joinRoom(rawCode: string, name: string) {
   link.guest = true;
   link.send = (a) => send(hostConn, { t: 'act', a });
   usePrefs.getState().set({ name });
-  useNet.setState({ role: 'guest', code, status: 'connecting', error: undefined, present: [] });
+  useNet.setState({ role: 'guest', code, lastCode: code, status: 'connecting', error: undefined, present: [], lostSince: undefined, giveUpAt: undefined });
   useGame.setState({ screen: 'lobby', online: true, players: [], round: null });
   hostSeen = Date.now();
   lostAt = 0;
@@ -398,8 +438,20 @@ async function exitGuest(error?: string) {
   await useGame.persist.rehydrate();
   link.guest = false;
   link.send = () => {};
-  useNet.setState({ role: 'off', code: '', status: error ? 'error' : 'idle', error, present: [] });
+  useNet.setState({ role: 'off', code: '', status: error ? 'error' : 'idle', error, present: [], lostSince: undefined, giveUpAt: undefined });
   useGame.setState({ screen: error ? 'online' : 'home', online: false });
+}
+
+/** Invitado sin conexión: volver a intentar ahora mismo. */
+export function retryNow() {
+  if (useNet.getState().role !== 'guest') return;
+  clearTimeout(retry);
+  dial();
+}
+
+/** Invitado sin conexión: dejar de esperar y volver al menú principal. */
+export function giveUp() {
+  if (useNet.getState().role === 'guest') void exitGuest();
 }
 
 // ------------------------------------------------------------------ Reacciones

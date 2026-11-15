@@ -112,6 +112,8 @@ export interface Round {
   clock: number;
   /** Cuándo empezó la fase de pistas actual (ms). */
   startedAt?: number;
+  /** Sala: la ronda está en pausa desde este momento (el anfitrión volvió a la sala). */
+  pausedAt?: number;
   /** Modo Mezcla: id del tema de la ronda. */
   theme?: string;
   event?: EventId;
@@ -230,6 +232,10 @@ interface State {
   vote(accused: string[], nobody: boolean, tallyInfo?: Round['lastTally']): void;
   castVote(voter: string, target: string): void;
   closeVote(): void;
+  /** Sala: el anfitrión vuelve a la sala y la ronda queda en pausa (el reloj se detiene). */
+  pauseRound(): void;
+  /** Sala: sigue la ronda en pausa justo donde se quedó. */
+  resumeRound(): void;
   /** Sala: un jugador pide (o deja de pedir) votar. */
   callVote(player: string, on: boolean): void;
   /** Sala (anfitrión): un teléfono salió a media ronda; la partida sigue sin él. */
@@ -683,6 +689,22 @@ export const useGame = create<State>()(
         const { round } = get();
         if (!round || link.guest || round.result) return;
         set({ round: { ...round, phase: 'vote', votes: {}, voteCalls: [], pendingChallenge: undefined }, screen: 'vote' });
+      },
+
+      pauseRound() {
+        const { round, online } = get();
+        if (link.guest) return;
+        if (!round || round.result) return set({ screen: online ? 'lobby' : 'home' });
+        set({ round: round.pausedAt ? round : { ...round, pausedAt: Date.now() }, screen: online ? 'lobby' : 'home' });
+      },
+
+      resumeRound() {
+        const { round } = get();
+        if (!round || link.guest) return;
+        // El reloj de la ronda no corre mientras estuvo en pausa.
+        const pausedFor = round.pausedAt ? Date.now() - round.pausedAt : 0;
+        const r: Round = { ...round, pausedAt: undefined, startedAt: round.startedAt ? round.startedAt + pausedFor : undefined };
+        set({ round: r, screen: resumeScreen(r) });
       },
 
       callVote(player, on) {

@@ -160,7 +160,7 @@ export function Discuss() {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
   const adult = useGame((s) => s.settings.adult);
-  const { nextTurn, dismissChallenge, toggleCursed, go, setModerator, openVote } = useGame();
+  const { nextTurn, dismissChallenge, toggleCursed, go, setModerator, openVote, pauseRound } = useGame();
   const moderatorId = useGame((s) => s.session.moderator);
   const { online, me, host, seats } = useSeat();
   const present = useNet((s) => s.present);
@@ -599,7 +599,7 @@ export function Discuss() {
           </Button>
         )}
         {host && (
-          <Button variant="ghost" small onClick={() => go(online ? 'lobby' : 'home')}>
+          <Button variant="ghost" small onClick={() => (online ? pauseRound() : go('home'))}>
             {online ? '🏠 Volver a la sala' : '🏠 Salir al menú'}
           </Button>
         )}

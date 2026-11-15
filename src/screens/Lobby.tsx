@@ -8,7 +8,7 @@ import { levelFromXp } from '../engine/scoring';
 import { burst } from '../fx/fx';
 import { addLocalPlayer, changeAvatar, inviteUrl, kick, leaveRoom, removeLocalPlayer } from '../net/net';
 import { isHere, useNet, useSeat } from '../net/state';
-import { AVATAR_CHOICES, MAX_PLAYERS, resumeScreen, useGame } from '../store/game';
+import { AVATAR_CHOICES, MAX_PLAYERS, useGame } from '../store/game';
 
 const STATUS = {
   idle: { t: 'Sin conexión', c: '#a6a0bd' },
@@ -20,7 +20,7 @@ const STATUS = {
 
 /** La sala: quién está, cómo invitar a más gente y, para el anfitrión, el botón de empezar. */
 export function Lobby() {
-  const { players, profiles, round, session, go, startRound } = useGame();
+  const { players, profiles, round, session, startRound, resumeRound, go } = useGame();
   const { code, status, present } = useNet();
   const { me, host, seats } = useSeat();
   const [copied, setCopied] = useState(false);
@@ -34,6 +34,9 @@ export function Lobby() {
   const url = code ? inviteUrl(code) : '';
   const hostPlayer = players[0];
   const midRound = round && !round.result;
+  const paused = !!midRound && !!round.pausedAt;
+  // ¿Hay algún otro teléfono conectado ahora mismo?
+  const othersHere = players.some((p) => !p.owner && p.id !== me && present.includes(p.id));
 
   const share = async () => {
     const text = `Entra a mi sala de IMPOSTOR con el código ${code}`;
@@ -64,6 +67,29 @@ export function Lobby() {
 
       <div className="scroll content">
         <div className="stack" style={{ gap: 14 }}>
+          {paused && (
+            <motion.div
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`panel paused-card ${!othersHere && host ? 'alone' : ''}`}
+            >
+              <div className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
+                <motion.span animate={{ scale: [1, 1.12, 1] }} transition={{ repeat: Infinity, duration: 1.4 }} style={{ fontSize: 30 }}>
+                  {!othersHere && host ? '📡' : '⏸️'}
+                </motion.span>
+                <div className="grow">
+                  <b>{!othersHere && host ? 'Se desconectaron todos' : `Ronda ${round.n} en pausa`}</b>
+                  <div className="dim" style={{ fontSize: 13, lineHeight: 1.45, marginTop: 2 }}>
+                    {host
+                      ? !othersHere
+                        ? `La ronda ${round.n} quedó en pausa y el reloj está detenido. Cuando vuelvan a entrar con el código ${code} o el QR, toca ⏯️ Continuar ronda.`
+                        : 'El reloj está detenido. Cuando estén todos, toca ⏯️ Continuar ronda y siguen justo donde se quedaron.'
+                      : `${hostPlayer?.name ?? 'El anfitrión'} la va a continuar cuando estén todos. Deja esta pantalla abierta.`}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
           {code ? (
             <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} className="panel room-card">
               <QR text={url} size={132} />
@@ -161,11 +187,13 @@ export function Lobby() {
         {host ? (
           <>
             {midRound && (
-              <Button variant="ghost" onClick={() => go(resumeScreen(round))}>
+              <Button variant={othersHere ? 'primary' : 'ghost'} onClick={() => resumeRound()} style={othersHere ? { minHeight: 66, fontSize: 30 } : undefined}>
                 ⏯️ Continuar ronda
               </Button>
             )}
             <Button
+              variant={midRound ? 'ghost' : 'primary'}
+              small={!!midRound}
               disabled={players.length < 3}
               onClick={() => {
                 sfx.whoosh();
@@ -173,9 +201,9 @@ export function Lobby() {
                 burst({ kind: 'confetti', count: 60, colors: ['#7c5cff', '#2ee6ff', '#fff'] });
                 startRound();
               }}
-              style={{ minHeight: 66, fontSize: 30 }}
+              style={midRound ? undefined : { minHeight: 66, fontSize: 30 }}
             >
-              {players.length < 3 ? `Faltan ${3 - players.length} jugadores` : session.round > 0 ? '▶ Siguiente ronda' : '▶ ¡Empezar!'}
+              {players.length < 3 ? `Faltan ${3 - players.length} jugadores` : midRound ? '▶ Empezar otra ronda' : session.round > 0 ? '▶ Siguiente ronda' : '▶ ¡Empezar!'}
             </Button>
             <Button variant="ghost" small onClick={() => go('setup')}>
               ⚙️ Reglas de la partida
@@ -186,7 +214,7 @@ export function Lobby() {
             <div style={{ fontSize: 34 }}>
               <Emo e="⏳" />
             </div>
-            <b>{hostPlayer ? `${hostPlayer.name} dará inicio` : 'Entrando a la sala…'}</b>
+            <b>{paused ? 'Ronda en pausa' : hostPlayer ? `${hostPlayer.name} dará inicio` : 'Entrando a la sala…'}</b>
             <span className="dim" style={{ fontSize: 13 }}>
               Deja esta pantalla abierta.
             </span>

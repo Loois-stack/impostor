@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Component, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { setVibration, sfx, type MusicMood } from './audio/sfx';
+import { ConnectionLost } from './components/ConnectionLost';
 import { LeaveFab } from './components/LeaveGame';
 import { screenAnim } from './components/ui';
 import { CAT } from './data/categories';
@@ -250,6 +251,7 @@ export function App() {
       </AnimatePresence>
       {online && LEAVE_ON.includes(safe) && <LeaveFab />}
       <NetBanner />
+      <ConnectionLost />
       <UpdateBanner screen={safe} online={online} />
       <SceneCard title={title} />
       {REACT_ON.includes(safe) && (safe !== 'lobby' || online) && <ReactFab key={safe} onReact={react} />}
