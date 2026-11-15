@@ -19,7 +19,7 @@ import { publicId, useNet } from './state';
  * Es un juego entre amigos: el estado completo viaja a cada teléfono y no se cifra nada extra.
  */
 
-const PROTOCOL = 3;
+const PROTOCOL = 4;
 const PREFIX = 'impostor-quien-miente-';
 /** Sin letras ni números que se confundan al dictarlos (0/O, 1/I…). */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

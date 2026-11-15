@@ -5,7 +5,7 @@ import { CardFront } from './GameCard';
 import { HoldToReveal } from './HoldToReveal';
 
 /** La carta secreta de un jugador: se ve solo mientras se mantiene presionada. */
-export function PlayerCard({ playerId, onSeen, hint }: { playerId: string; onSeen?: () => void; hint?: string }) {
+export function PlayerCard({ playerId, onSeen, hint, glow }: { playerId: string; onSeen?: () => void; hint?: string; glow?: string }) {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
   const { item, role } = cardFor(round, playerId);
@@ -25,6 +25,7 @@ export function PlayerCard({ playerId, onSeen, hint }: { playerId: string; onSee
         />
       }
       onSeen={onSeen}
+      glow={glow}
       hint={hint ?? 'Mantén presionado para ver'}
     />
   );

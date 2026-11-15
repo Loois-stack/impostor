@@ -4,7 +4,8 @@ import { TopBar, stagger } from '../components/ui';
 import { useGame } from '../store/game';
 
 const STEPS = [
-  ['🃏', 'Reparto', 'Cada ronda llega en un sobre: córtenlo deslizando el dedo por la línea punteada y vean cómo se barajan las cartas. Con un teléfono, pásenlo y cada quien mantiene presionada su carta en secreto; con varios, cada quien la ve en el suyo.'],
+  ['🎴', 'Tu sobre', 'Cada quien recibe su propio sobre: córtalo deslizando el dedo por la línea punteada, se llena de luz y sale tu carta. Mantenla presionada para verla en secreto. Con un teléfono, se lo van pasando; con varios, cada quien abre el suyo.'],
+  ['✨', 'Brillos', 'Al abrir el sobre sale un brillo: plateado, dorado, rosa, amatista, holográfico o cósmico (el más raro). Es pura suerte y es igual para civiles e impostores: no delata a nadie.'],
   ['🔪', 'El impostor', 'Todos tienen la MISMA carta… menos el impostor, que tiene algo PARECIDO pero distinto (o nada, en modo clásico). A veces casi idéntico y puede camuflarse; a veces tendrá que jugársela.'],
   ['👥', 'Varios impostores', 'Con más jugadores puede haber más impostores (en automático: 1 hasta 5 jugadores, 2 hasta 8, 3 hasta 11…). Cada uno tiene una carta distinta y no sabe quiénes son los otros, salvo que activen el modo equipo: ahí se conocen, comparten carta y ganan juntos.'],
   ['🗣️', 'Pistas', 'Por turnos, cada jugador dice una palabra o frase sobre su carta. Muy obvia = el impostor la descubre. Muy vaga = sospechan de ti.'],
@@ -12,6 +13,7 @@ const STEPS = [
   ['🤫', 'Misiones secretas', 'A veces tu carta trae una misión que solo tú conoces: defender al sospechoso, hacerte el culpable… Nadie sabe quién tiene una hasta el final. Vale +100.'],
   ['🎡', 'Eventos de ronda', 'Algunas rondas cambian las reglas: doble impostor, fiesta mexicana, cine mudo, ronda dorada, un bufón que quiere que lo acusen… y a veces un evento secreto que nadie conoce.'],
   ['🗳️', 'Votación', 'Decidan juntos o voten en secreto. En eliminación, el acusado sale y la búsqueda sigue; cada inocente que echen les resta premio. Si quedan 2, gana el impostor.'],
+  ['🎯', 'Última oportunidad', 'Si atrapan al impostor, antes de revelar la verdad tiene una oportunidad: adivinar la carta de los civiles entre seis. Si acierta, se lleva +150. Si atraparon a varios, cada uno elige en secreto y se revela al final.'],
   ['🏆', 'Puntos', 'Civiles: +100 si atrapan al impostor. Impostor: +250 si sobrevive, o +150 si lo atrapan pero adivina la carta. Rachas multiplican hasta x2. Sube de nivel y desbloquea logros.'],
   ['💚', 'Para pasarla bien', 'Los eventos están hechos para reírse, no para arriesgarse: nada de alcohol, golpes ni retos peligrosos. El modo +18 solo agrega groserías, y van para la carta, nunca para una persona.'],
 ];

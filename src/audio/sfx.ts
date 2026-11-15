@@ -474,6 +474,67 @@ class Sfx {
     for (let i = 0; i < 6; i++) this.tone({ type: 'sine', f: 1800 + Math.random() * 2600, dur: 0.35, vol: 0.045, at: i * 0.05 + Math.random() * 0.02, wet: 0.8 });
   }
 
+  // ---------------- Brillo del sobre personal (igual para civiles e impostores) ----------------
+
+  /** El sobre recién cortado se llena de luz: zumbido que sube y chispas cada vez más seguidas. */
+  glowCharge(dur = 1, level = 1) {
+    if (!this.ok) return;
+    this.noise({ dur, vol: 0.1 + level * 0.03, filter: 'bandpass', f: 500, f2: 5000 + level * 1000, q: 3, attack: dur * 0.92, wet: 0.5 });
+    this.tone({ type: 'triangle', f: 196, f2: 784 * (1 + level * 0.12), dur, vol: 0.05 + level * 0.012, attack: dur * 0.9, wet: 0.6 });
+    this.tone({ type: 'sine', f: 294, f2: 1175 * (1 + level * 0.12), dur, vol: 0.04, attack: dur * 0.9, wet: 0.6, detune: 8 });
+    let t = 0;
+    let gap = 0.12;
+    while (t < dur) {
+      this.grain(t, 4000 + Math.random() * 4000, 6, 0.04 + (t / dur) * 0.12, 0.02);
+      t += gap;
+      gap = Math.max(0.025, gap * 0.86);
+    }
+    // En los brillos más raros, la mesa retumba.
+    if (level >= 3) this.tone({ type: 'sine', f: 55, dur, vol: 0.1 + level * 0.05, attack: dur * 0.85, wet: 0.2 });
+  }
+
+  /** Estallido de luz al salir la carta: un arpegio brillante que crece con la rareza. */
+  glowBurst(level = 1) {
+    if (!this.ok) return;
+    this.tone({ type: 'sine', f: 130, f2: 50, dur: 0.5, vol: 0.45 + level * 0.07, wet: 0.3 });
+    this.noise({ dur: 0.8 + level * 0.2, vol: 0.14, filter: 'highpass', f: 5000, f2: 9000, attack: 0.01, wet: 0.7 });
+    const root = 72 + [0, 2, 4, 5, 7][level - 1];
+    const steps = [0, 4, 7, 11, 12, 16, 19, 23, 24, 28, 31, 35, 36];
+    const n = Math.min(steps.length, 3 + level * 2);
+    for (let i = 0; i < n; i++) {
+      const f = midi(root + steps[i]);
+      this.tone({ type: 'triangle', f, dur: 0.9, vol: 0.07, at: 0.04 + i * 0.055, attack: 0.008, wet: 0.6 });
+      this.tone({ type: 'sine', f: f * 2, dur: 0.6, vol: 0.025, at: 0.05 + i * 0.055, wet: 0.8 });
+    }
+    // Legendario y mítico: un coro de fondo que se queda sonando.
+    if (level >= 4)
+      [0, 4, 7, 12].forEach((s) => {
+        this.tone({ type: 'triangle', f: midi(root - 12 + s), dur: 2.4, vol: 0.045, attack: 0.25, wet: 0.8, detune: -9 });
+        this.tone({ type: 'triangle', f: midi(root - 12 + s), dur: 2.4, vol: 0.045, attack: 0.25, wet: 0.8, detune: 9 });
+      });
+    if (level === 5) for (let i = 0; i < 10; i++) this.tone({ type: 'sine', f: 2400 + Math.random() * 3200, dur: 0.4, vol: 0.04, at: 0.6 + i * 0.07, wet: 0.9 });
+  }
+
+  // ---------------- Última oportunidad del impostor ----------------
+
+  /** La mira se fija sobre el impostor atrapado: dos pitidos y un golpe. */
+  lockOn() {
+    if (!this.ok) return;
+    this.tone({ type: 'square', f: 1760, dur: 0.05, vol: 0.06, wet: 0.05 });
+    this.tone({ type: 'square', f: 1760, dur: 0.05, vol: 0.06, at: 0.09, wet: 0.05 });
+    this.tone({ type: 'sine', f: 150, f2: 40, dur: 0.5, vol: 0.8, at: 0.18, wet: 0.3 });
+    this.noise({ dur: 0.3, vol: 0.3, filter: 'lowpass', f: 1800, f2: 300, at: 0.18, wet: 0.3 });
+  }
+
+  /** Golpe de título: impacto grave con un timbre metálico que se queda vibrando. */
+  slam() {
+    if (!this.ok) return;
+    this.tone({ type: 'sine', f: 90, f2: 35, dur: 0.9, vol: 0.9, wet: 0.5 });
+    this.tone({ type: 'sawtooth', f: 220, f2: 110, dur: 0.5, vol: 0.12, dist: true, wet: 0.5 });
+    this.noise({ dur: 0.5, vol: 0.35, filter: 'bandpass', f: 1200, f2: 300, q: 0.8, wet: 0.5 });
+    [880, 1318.5].forEach((f) => this.tone({ type: 'triangle', f, dur: 1.4, vol: 0.05, at: 0.02, wet: 0.8 }));
+  }
+
   /** Ambiente de terror de fondo (rondas de horror). */
   startDrone() {
     if (!this.ok || this.drone) return;

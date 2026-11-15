@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
+import { PackGallery } from '../components/PackGallery';
 import { Avatar, Button, Sheet, Toggle, TopBar } from '../components/ui';
 import { ITEMS } from '../data';
 import { ACHIEVEMENTS } from '../engine/achievements';
@@ -132,6 +133,8 @@ export function SettingsScreen() {
               );
             })}
           </div>
+
+          <PackGallery />
 
           <div className="label" style={{ marginTop: 8 }}>
             🔊 Sonido

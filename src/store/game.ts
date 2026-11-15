@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { CATEGORIES, HORROR_CATS } from '../data/categories';
 import { CH_BY_ID, type ChallengeKind } from '../data/challenges';
+import { rollPacks, type PackRoll } from '../data/packs';
 import { BY_ID, CUSTOM_GROUP, playable, setCustomItems } from '../data';
 import type { CategoryId, Item, Level } from '../data/types';
 import { ACHIEVEMENTS, emptyStats, type Stats } from '../engine/achievements';
@@ -130,6 +131,8 @@ export interface Round {
   dealIdx: number;
   /** Multijugador: quiénes ya vieron su carta. */
   ready: string[];
+  /** Sobre de cada jugador (diseño y brillo). Se sortea sin mirar el rol. */
+  packs?: Record<string, PackRoll>;
   lap: number;
   turn: number;
   /** Fases de pistas jugadas en la ronda (sube con cada "seguir buscando"). */
@@ -159,6 +162,8 @@ export interface Round {
   guessIdx: number;
   /** Carta que eligió el impostor atrapado en su última oportunidad. */
   guessPick?: string;
+  /** Lo que eligió cada impostor atrapado (se revela cuando ya eligieron todos). */
+  guessPicks?: Record<string, string>;
   guessed: Record<string, boolean>;
   challengeResults: Record<string, boolean>;
   missionResults: Record<string, boolean>;
@@ -556,6 +561,9 @@ export const useGame = create<State>()(
           phase: 'deal',
           dealIdx: 0,
           ready: [],
+          // Generador aparte: el sobre no depende de nada de lo que se sorteó antes (ni del rol).
+          // En Mezcla cuenta el tema (lo que ve la mesa), nunca la categoría de la carta civil.
+          packs: rollPacks(ids, theme ? !!theme.horror : HORROR_CATS.includes(cat)),
           lap: 1,
           turn: 0,
           talks: 1,
@@ -694,7 +702,7 @@ export const useGame = create<State>()(
         if (!round || round.step !== 'guess' || round.guessPick) return;
         const guesser = round.impostors.filter((i) => round.accused.includes(i))[round.guessIdx];
         if (!guesser) return;
-        set({ round: { ...round, guessPick: id, guessed: { ...round.guessed, [guesser]: id === round.civil } } });
+        set({ round: { ...round, guessPick: id, guessPicks: { ...round.guessPicks, [guesser]: id }, guessed: { ...round.guessed, [guesser]: id === round.civil } } });
       },
 
       nextGuess() {
@@ -702,8 +710,8 @@ export const useGame = create<State>()(
         if (!round || link.guest) return;
         const caught = round.impostors.filter((i) => round.accused.includes(i));
         if (round.guessIdx + 1 < caught.length) return set({ round: { ...round, guessIdx: round.guessIdx + 1, guessPick: undefined } });
-        if (pendingJudgments(round).length) return set({ round: { ...round, step: 'challenges', guessPick: undefined } });
-        get().finishRound();
+        // Ya eligieron todos: ahora sí se revela la verdad.
+        set({ round: { ...round, step: 'truth', guessPick: undefined } });
       },
 
       continueRound() {
@@ -944,7 +952,7 @@ export const useGame = create<State>()(
     }),
     {
       name: 'impostor-v1',
-      version: 3,
+      version: 4,
       // Un invitado refleja la partida del anfitrión: eso no debe pisar lo guardado en su teléfono.
       storage: createJSONStorage(() => {
         const ls = localStorage; // si no existe (pruebas en Node) esto lanza y zustand desactiva el guardado
@@ -977,6 +985,8 @@ export const useGame = create<State>()(
         }
         // v2 → v3: varios impostores con carta propia y modo equipo.
         if (version < 3 && p.round) p.round = { ...p.round, decoys: p.round.decoys ?? {}, declared: p.round.declared ?? p.round.impostors.length, team: !!p.round.team };
+        // v3 → v4: el impostor adivina antes de ver la verdad; si estaba a la mitad, vuelve a elegir.
+        if (version < 4 && p.round) p.round = { ...p.round, guessPicks: {}, ...(p.round.step === 'guess' ? { guessIdx: 0, guessPick: undefined, guessed: {} } : {}) };
         return p;
       },
       merge: (persisted, current) => {

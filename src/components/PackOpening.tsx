@@ -1,17 +1,14 @@
-import { animate, motion, useAnimationControls, useMotionValue, useTransform } from 'framer-motion';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { animate, AnimatePresence, motion, useAnimationControls, useMotionValue, useTransform } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { haptic, sfx } from '../audio/sfx';
+import { DESIGN_BY_ID, GLOW_BY_ID, GLOWS, PACK_DESIGNS, type Glow, type PackDesign, type PackDesignId, type PackRoll } from '../data/packs';
 import { burst, flash, shake } from '../fx/fx';
+import { emojiRain } from '../fx/scene';
 import { CardBack } from './GameCard';
 import { Glitch } from './ui';
 
-/** Fases: sellado → abierto → salen las cartas → abanico → riffle → puente → corte → emparejar → repartir. */
-type Phase = 'sealed' | 'open' | 'emerge' | 'fan' | 'split' | 'riffle' | 'bridge' | 'cascade' | 'cut' | 'cutBack' | 'square' | 'deal';
-
 /** Parte de arriba del sobre que se corta (fracción del alto). */
 const STRIP = 0.17;
-const CW = 84;
-const CH = 118;
 const TEETH = 18;
 
 /** Bordes sellados en zigzag arriba y abajo, como un sobre de verdad. */
@@ -26,38 +23,129 @@ const CRIMP = (() => {
   return `polygon(${[...top, ...bottom].join(', ')})`;
 })();
 
+export const designOf = (roll?: PackRoll) => DESIGN_BY_ID[roll?.d as PackDesignId] ?? PACK_DESIGNS[0];
+export const glowOf = (roll?: PackRoll) => GLOW_BY_ID[roll?.g as Glow['id']] ?? GLOWS[0];
+
+/** Halo detrás de la carta: un degradado con los colores del brillo. */
+export const glowHalo = (g: Glow) =>
+  g.colors.length > 3 ? `conic-gradient(${[...g.colors, g.colors[0]].join(', ')})` : `radial-gradient(circle, ${g.colors[1]}, ${g.colors[2]} 55%, transparent 75%)`;
+
+/** Variables CSS con los colores del brillo. */
+const glowVars = (g: Glow) => ({ '--g1': g.colors[0], '--g2': g.colors[1], '--g3': g.colors[2] ?? g.colors[1], '--g4': g.colors[3] ?? g.colors[2] ?? g.colors[1] }) as CSSProperties;
+
+/** Adornos propios de cada diseño de sobre (todo con CSS: sin imágenes, funciona sin internet). */
+function Decor({ id }: { id: PackDesignId }) {
+  switch (id) {
+    case 'clasico':
+      return <div className="pack-rosette" />;
+    case 'holo':
+      return (
+        <>
+          <div className="holo-swirl" />
+          <div className="holo-shards" />
+        </>
+      );
+    case 'misterio':
+      return (
+        <>
+          <div className="mys-qs" />
+          <div className="mys-spot" />
+        </>
+      );
+    case 'fiesta':
+      return (
+        <>
+          <div className="fie-confetti" />
+          <div className="picado">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <i key={i} />
+            ))}
+          </div>
+        </>
+      );
+    case 'expediente':
+      return (
+        <>
+          <div className="exp-print" />
+          <div className="exp-stamp">Confidencial</div>
+        </>
+      );
+    case 'galaxia':
+      return (
+        <>
+          <div className="gal-nebula" />
+          <div className="gal-stars" />
+          <div className="gal-stars b" />
+        </>
+      );
+    case 'arcade':
+      return (
+        <>
+          <div className="arc-sun" />
+          <div className="arc-grid" />
+        </>
+      );
+    case 'terror':
+      return (
+        <>
+          <div className="ter-fog" />
+          <div className="ter-drips" />
+        </>
+      );
+  }
+}
+
 /** Arte del sobre (diseño propio). Se dibuja completo dentro de la tira y del cuerpo para que encajen. */
-function PackArt({ title, emoji, count }: { title: string; emoji: string; count: number }) {
+export function PackArt({ design, owner, edition, small }: { design: PackDesign; owner?: string; edition?: string; small?: boolean }) {
   return (
-    <div className="pack-art">
+    <div className={`pack-art pd-${design.id} ${small ? 'small' : ''}`} style={{ '--pc': design.c1, '--pc2': design.c2 } as CSSProperties}>
+      <Decor id={design.id} />
       <div className="pack-foil" />
       <div className="pack-crimp top" />
       <div className="pack-crimp bottom" />
-      <div className="pack-rosette" />
-      <div className="pack-badge">
-        <b>×{count}</b>
-        <small>cartas</small>
-      </div>
+      {!small && (
+        <div className="pack-badge">
+          <b>×1</b>
+          <small>carta secreta</small>
+        </div>
+      )}
       <div className="pack-center">
-        <div className="pack-eye">👁️</div>
-        <div className="display pack-logo">IMPOSTOR</div>
-        <div className="pack-sub">¿Quién miente?</div>
+        <div className="pack-eye">{design.emoji}</div>
+        <div className={`display pack-logo ${design.horror ? 'horror-font' : ''}`}>IMPOSTOR</div>
+        {!small && <div className="pack-sub">{design.motto}</div>}
       </div>
-      <div className="pack-edition">
-        <span>{emoji}</span> Sobre de {title}
-      </div>
-      <div className="pack-fine">Contiene un impostor… o varios. O ninguno.</div>
+      {owner && (
+        <div className="pack-owner">
+          <small>Sobre de</small>
+          <b>{owner}</b>
+        </div>
+      )}
+      {edition && <div className="pack-edition">{edition}</div>}
+      {!small && <div className="pack-fine">El brillo es pura suerte: no dice quién es impostor.</div>}
     </div>
   );
 }
 
+/** Sobre chiquito, para el barajeo y la pila de sobres que quedan. */
+export function MiniPack({ roll, style }: { roll?: PackRoll; style?: CSSProperties }) {
+  return (
+    <div className="mini-pack" style={{ clipPath: CRIMP, ...style }}>
+      <PackArt design={designOf(roll)} small />
+    </div>
+  );
+}
+
+type PPhase = 'sealed' | 'charge' | 'burst' | 'card';
+
 /**
- * Sobre de cartas: se corta deslizando el dedo por la línea punteada (o tocándola), las cartas
- * salen y se barajan frente a todos. `onDone` se llama cuando la primera carta sale disparada.
+ * Sobre personal: el jugador lo corta con el dedo, se llena de luz y sale su carta girando.
+ * El brillo depende solo de la suerte (`roll`), nunca del rol. Cuando la carta aterriza se
+ * muestra `children` (la carta de verdad) exactamente en el mismo lugar.
  */
-export function PackOpening({ count, color, color2, title, emoji, onDone }: { count: number; color: string; color2: string; title: string; emoji: string; onDone: () => void }) {
-  const N = Math.max(5, Math.min(12, count));
-  const [phase, setPhase] = useState<Phase>('sealed');
+export function PersonalPack({ roll, owner, edition, onOpened, children }: { roll: PackRoll; owner: string; edition: string; onOpened?: () => void; children?: ReactNode }) {
+  const design = designOf(roll);
+  const glow = glowOf(roll);
+  const [phase, setPhase] = useState<PPhase>('sealed');
   const torn = useMotionValue(0);
   const stripRot = useTransform(torn, [0, 1], [0, -14]);
   const stripY = useTransform(torn, [0, 1], [0, -8]);
@@ -70,74 +158,58 @@ export function PackOpening({ count, color, color2, title, emoji, onDone }: { co
   const lastBuzz = useRef(0);
   const timers = useRef<number[]>([]);
   const done = useRef(false);
-  const jitter = useMemo(() => Array.from({ length: N }, () => ({ x: (Math.random() - 0.5) * 10, r: (Math.random() - 0.5) * 10 })), [N]);
+  // Más rareza, más suspenso antes del estallido.
+  const chargeMs = 520 + glow.level * 230;
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const at = (ms: number, fn: () => void) => timers.current.push(window.setTimeout(fn, ms));
 
   // El sobre cae a la mesa al aparecer.
   useEffect(() => {
     sfx.whoosh();
-    const t = window.setTimeout(() => {
+    at(380, () => {
       sfx.packCrinkle(0.8);
       haptic(12);
-    }, 380);
-    timers.current.push(t);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const at = (ms: number, fn: () => void) => timers.current.push(window.setTimeout(fn, ms));
+  const explode = () => {
+    setPhase('burst');
+    sfx.glowBurst(glow.level);
+    haptic(glow.level >= 4 ? [60, 30, 60, 30, 160] : glow.level >= 3 ? [50, 30, 110] : [40, 20, 70]);
+    flash(glow.colors[1], 520, 0.32 + glow.level * 0.07);
+    shake(5 + glow.level * 3, 380 + glow.level * 80);
+    const r = packRef.current?.getBoundingClientRect();
+    if (r) burst({ x: r.left + r.width / 2, y: r.top + r.height * STRIP, kind: 'sparks', colors: [...glow.colors, '#fff'], count: 30 + glow.level * 22, power: 1 + glow.level * 0.12 });
+    if (glow.level >= 4) {
+      burst({ kind: 'confetti', colors: glow.colors, count: 50 + glow.level * 20 });
+      emojiRain(glow.level === 5 ? ['🌟', '✨', '💫', '⭐'] : ['✨', '💎', '🌈'], 10 + glow.level * 4);
+    }
+    at(1250, () => {
+      setPhase('card');
+      onOpened?.();
+    });
+  };
 
   const complete = () => {
     if (done.current) return;
     done.current = true;
     drag.current = null;
     torn.set(1);
-    setPhase('open');
+    setPhase('charge');
     sfx.packRip();
-    haptic([30, 20, 80]);
-    shake(10, 380);
-    const r = packRef.current?.getBoundingClientRect();
-    flash(color, 380, 0.35);
-    if (r) burst({ x: r.left + r.width / 2, y: r.top + r.height * STRIP, kind: 'sparks', colors: ['#fff', color, color2], count: 46 });
+    haptic([30, 20, 60]);
+    shake(6, 300);
     void stripCtl.start({ x: 170, y: -210, rotate: -55, opacity: 0, transition: { duration: 0.65, ease: [0.3, 0.6, 0.4, 1] } });
-    void packCtl.start({ rotate: [0, -3, 3, -1.5, 0], scale: [1, 1.04, 1], transition: { duration: 0.45 } });
-
-    const emerge = 420;
-    at(emerge, () => setPhase('emerge'));
-    for (let i = 0; i < N; i++) at(emerge + i * 85, () => sfx.cardSlide(1 + i * 0.03));
-    let t = emerge + N * 85 + 450;
-    const step = (ms: number, ph: Phase, fx?: () => void) => {
-      at(t, () => {
-        setPhase(ph);
-        fx?.();
-      });
-      t += ms;
-    };
-    step(600, 'fan', () => {
-      sfx.sparkle();
-      haptic(10);
-    });
-    step(320, 'split', () => sfx.whoosh());
-    step(650, 'riffle', () => {
-      sfx.riffle(0.55);
-      haptic([4, 20, 4, 20, 4, 20, 4]);
-    });
-    step(420, 'bridge', () => sfx.cardSlide(0.8));
-    step(460, 'cascade', () => sfx.riffle(0.38));
-    step(300, 'cut', () => sfx.cardSlide(1.1));
-    step(320, 'cutBack', () => sfx.deckTap());
-    step(420, 'square', () => {
-      sfx.deckTap();
-      at(t + 140, () => sfx.deckTap());
-      haptic([15, 60, 15]);
-    });
-    step(460, 'deal', () => {
-      sfx.flip();
-      sfx.sparkle();
-      haptic([30, 20, 60]);
-      flash(color, 400, 0.35);
-      burst({ kind: 'sparks', count: 30, colors: ['#fff', color, color2] });
-    });
-    at(t, onDone);
+    // El sobre tiembla cada vez más fuerte mientras se llena de luz.
+    const k = 1 + glow.level * 0.6;
+    const wobble = [0, -1, 1, -1.5, 1.5, -2, 2, -2.6, 2.6, -3.2, 3.2, 0].map((v) => v * k);
+    void packCtl.start({ x: wobble, rotate: wobble.map((v) => v * 0.6), transition: { duration: (chargeMs + 250) / 1000, ease: 'easeIn' } });
+    at(250, () => sfx.glowCharge(chargeMs / 1000, glow.level));
+    const beats = glow.level + 2;
+    for (let i = 0; i < beats; i++) at(250 + (i * chargeMs) / beats, () => haptic(6 + i * 4));
+    at(250 + chargeMs, explode);
   };
 
   const tearBy = (dx: number) => {
@@ -176,112 +248,92 @@ export function PackOpening({ count, color, color2, title, emoji, onDone }: { co
   };
 
   const sealed = phase === 'sealed';
-  const mid = (N - 1) / 2;
-  const half = Math.floor(N / 2);
-  const afterCut = phase === 'cutBack' || phase === 'square' || phase === 'deal';
-  // Tras el corte, la mitad de arriba pasa abajo: la carta de hasta arriba es la última de la otra mitad.
-  const z = (i: number) => (afterCut ? (i >= half ? i - half : i + (N - half)) : i);
-  const top = half - 1;
-
-  const target = (i: number) => {
-    const k = i - mid;
-    const j = jitter[i];
-    const left = i < half;
-    switch (phase) {
-      case 'sealed':
-      case 'open':
-        return { x: 0, y: 70, rotate: 0, scale: 0.85, opacity: 1, rotateY: 0 };
-      case 'emerge':
-        return { x: j.x * 0.6, y: -100 - i * 2.2, rotate: j.r * 0.5, scale: 1, opacity: 1, rotateY: 0 };
-      case 'fan':
-        return { x: k * 22, y: -60 + Math.abs(k) * 5, rotate: k * 7, scale: 1, opacity: 1, rotateY: [0, 28, 0] };
-      case 'split':
-        return { x: left ? -70 : 70, y: -55 - (left ? i : i - half) * 1.6, rotate: left ? -13 : 13, scale: 1, opacity: 1, rotateY: 0 };
-      case 'riffle':
-      case 'cascade':
-      case 'cutBack':
-      case 'square':
-        return { x: 0, y: -55 - z(i) * 1.2, rotate: phase === 'riffle' ? (i % 2 ? 1.5 : -1.5) : 0, scale: phase === 'square' ? [1, 1.05, 1] : 1, opacity: 1, rotateY: 0 };
-      case 'bridge':
-        return { x: k * 10, y: -65 - Math.sin((Math.PI * i) / Math.max(1, N - 1)) * 42, rotate: k * 4, scale: 1, opacity: 1, rotateY: 0 };
-      case 'cut':
-        return i >= half ? { x: 70, y: -95 - i * 1.2, rotate: 9, scale: 1, opacity: 1, rotateY: 0 } : { x: -6, y: -55 - i * 1.2, rotate: -2, scale: 1, opacity: 1, rotateY: 0 };
-      case 'deal':
-        return i === top ? { x: 0, y: -30, rotate: 0, scale: 1.8, opacity: 1, rotateY: [0, 180, 360] } : { x: 0, y: 220, rotate: 0, scale: 0.8, opacity: 0, rotateY: 0 };
-    }
-  };
-
-  const delay = (i: number) => {
-    if (phase === 'emerge') return i * 0.085;
-    if (phase === 'fan') return i * 0.02;
-    if (phase === 'riffle') {
-      // Las dos mitades se intercalan carta por carta.
-      const order = i < half ? i * 2 : (i - half) * 2 + 1;
-      return order * 0.04;
-    }
-    if (phase === 'bridge') return i * 0.012;
-    if (phase === 'cascade') return (N - 1 - i) * 0.03;
-    return 0;
-  };
-
-  const caption = sealed ? 'Abre el sobre' : phase === 'open' || phase === 'emerge' ? '¡Nuevas cartas!' : phase === 'deal' ? '¡Listas!' : 'Barajando…';
+  const out = phase === 'burst' || phase === 'card';
+  const rays = glow.colors.length > 3 ? `repeating-conic-gradient(${glow.colors.map((c, i) => `${c} ${i * 9}deg ${i * 9 + 5}deg, transparent ${i * 9 + 5}deg ${i * 9 + 9}deg`).join(', ')})` : undefined;
 
   return (
-    <div className="pack-stage">
-      <motion.div key={caption} className="display pack-caption" initial={{ opacity: 0, y: -12, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}>
-        <Glitch text={caption} hard={phase === 'deal'} />
-      </motion.div>
+    <div className="ppack" style={glowVars(glow)}>
+      {/* Rayos de luz detrás de todo: estallan al abrir y se quedan girando suaves detrás de la carta. */}
+      <AnimatePresence>
+        {out && (
+          <motion.div
+            className="ppack-rays"
+            style={rays ? { background: rays } : undefined}
+            initial={{ opacity: 0, scale: 0.2 }}
+            animate={phase === 'burst' ? { opacity: 1, scale: 1.1 } : { opacity: 0.42, scale: 1 }}
+            transition={{ duration: phase === 'burst' ? 0.5 : 1.2, ease: 'easeOut' }}
+          />
+        )}
+      </AnimatePresence>
 
-      <div className="pack-scene">
-        {/* Cartas: detrás del cuerpo del sobre, así parece que salen de adentro. */}
-        <div className="pack-deck" style={{ top: `calc(var(--pack-top) + var(--pack-h) * ${STRIP})` }}>
-          {jitter.map((_, i) => (
+      <div className="ppack-slot">
+        {phase === 'card' ? (
+          children
+        ) : (
+          // Carta "fantasma" (solo el dorso): la que sale girando del sobre. La de verdad la reemplaza al aterrizar.
+          <motion.div
+            className="card-wrap ppack-ghost"
+            initial={{ y: '16%', scale: 0.5, opacity: 0 }}
+            animate={phase === 'burst' ? { y: ['16%', '-58%', '0%'], scale: [0.5, 0.66, 1], rotateY: [0, 360, 720], rotate: [0, -5, 0], opacity: [1, 1, 1] } : { y: '16%', scale: 0.5, opacity: 0 }}
+            transition={phase === 'burst' ? { duration: 1.15, times: [0, 0.45, 1], ease: 'easeOut' } : { duration: 0 }}
+          >
+            <div className="ppack-ghost-face">
+              <CardBack hint />
+            </div>
+          </motion.div>
+        )}
+        <AnimatePresence>
+          {out && (
             <motion.div
-              key={i}
-              className="pack-card"
-              style={{ width: CW, height: CH, marginLeft: -CW / 2, marginTop: -CH / 2, zIndex: z(i), transformOrigin: phase === 'fan' ? '50% 130%' : '50% 50%' }}
-              initial={{ x: 0, y: 70, scale: 0.85, opacity: 1 }}
-              animate={target(i)}
-              transition={{ type: 'spring', stiffness: phase === 'emerge' ? 140 : 300, damping: phase === 'emerge' ? 15 : 24, delay: delay(i) }}
+              className="glow-tag"
+              initial={{ scale: 2.6, opacity: 0, rotate: -8 }}
+              animate={{ scale: 1, opacity: 1, rotate: 0 }}
+              transition={{ delay: 0.55, type: 'spring', stiffness: 420, damping: 16 }}
             >
-              <div className="mini-back" style={{ position: 'absolute', inset: 0, borderRadius: 10 }}>
-                <CardBack small />
-              </div>
+              <span>{glow.emoji}</span>
+              <b>Brillo {glow.name}</b>
+              <small>{glow.rarity}</small>
             </motion.div>
-          ))}
-        </div>
+          )}
+        </AnimatePresence>
+      </div>
 
+      {phase !== 'card' && (
         <motion.div
-          className="pack-wrap"
-          initial={{ y: -420, rotate: -12, opacity: 0 }}
-          animate={phase === 'fan' || phase === 'split' || ['riffle', 'bridge', 'cascade', 'cut', 'cutBack', 'square', 'deal'].includes(phase) ? { y: 420, rotate: 14, opacity: 0 } : { y: 0, rotate: 0, opacity: 1 }}
-          transition={phase === 'sealed' ? { type: 'spring', stiffness: 140, damping: 13 } : { duration: 0.6, ease: 'easeIn' }}
+          className="ppack-pack"
+          initial={{ y: -480, rotate: -12, opacity: 0 }}
+          animate={out ? { y: 520, rotate: 12, opacity: 0, scale: 0.9 } : { y: 0, rotate: 0, opacity: 1 }}
+          transition={out ? { delay: 0.3, duration: 0.6, ease: 'easeIn' } : { type: 'spring', stiffness: 140, damping: 13 }}
         >
           <div className={sealed ? 'pack-float' : ''} style={{ position: 'absolute', inset: 0 }}>
-          <motion.div
-            ref={packRef}
-            className="pack"
-            style={{ '--pc': color, '--pc2': color2, clipPath: CRIMP } as CSSProperties}
-            animate={packCtl}
-            whileTap={sealed ? { scaleX: 0.97, scaleY: 1.02 } : undefined}
-            onPointerDown={() => sealed && sfx.packCrinkle(0.6)}
-          >
-            <motion.div className={`pack-body ${sealed ? 'idle' : ''}`}>
-              <div className="pack-slice" style={{ top: `${(-STRIP / (1 - STRIP)) * 100}%`, height: `${100 / (1 - STRIP)}%` }}>
-                <PackArt title={title} emoji={emoji} count={count} />
+            {/* Luz que se escapa por la abertura. */}
+            {phase === 'charge' && (
+              <motion.div className="ppack-leak" initial={{ scaleY: 0, opacity: 0 }} animate={{ scaleY: [0, 0.4, 0.3, 0.8, 0.6, 1.1], opacity: [0, 0.7, 0.5, 0.9, 0.7, 1] }} transition={{ duration: (chargeMs + 250) / 1000, ease: 'easeIn' }} />
+            )}
+            <motion.div
+              ref={packRef}
+              className="pack"
+              style={{ clipPath: CRIMP }}
+              animate={packCtl}
+              whileTap={sealed ? { scaleX: 0.97, scaleY: 1.02 } : undefined}
+              onPointerDown={() => sealed && sfx.packCrinkle(0.6)}
+            >
+              <div className={`pack-body ${sealed ? 'idle' : ''}`}>
+                <div className="pack-slice" style={{ top: `${(-STRIP / (1 - STRIP)) * 100}%`, height: `${100 / (1 - STRIP)}%` }}>
+                  <PackArt design={design} owner={owner} edition={edition} />
+                </div>
+                {!sealed && <motion.div className="pack-glow" initial={{ opacity: 0 }} animate={{ opacity: [0, 0.6, 0.4, 1] }} transition={{ duration: chargeMs / 1000 }} />}
               </div>
-              {!sealed && <motion.div className="pack-glow" initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 0.55] }} transition={{ duration: 0.9 }} />}
-            </motion.div>
 
-            <motion.div className="pack-strip" style={{ rotate: stripRot, y: stripY }} animate={stripCtl}>
-              <div className="pack-slice" style={{ top: 0, height: `${100 / STRIP}%` }}>
-                <PackArt title={title} emoji={emoji} count={count} />
-              </div>
-            </motion.div>
+              <motion.div className="pack-strip" style={{ rotate: stripRot, y: stripY }} animate={stripCtl}>
+                <div className="pack-slice" style={{ top: 0, height: `${100 / STRIP}%` }}>
+                  <PackArt design={design} owner={owner} edition={edition} />
+                </div>
+              </motion.div>
 
-            <div className="pack-line" />
-            <motion.div className="pack-tear" style={{ width: tearW }} />
-          </motion.div>
+              <div className="pack-line" />
+              <motion.div className="pack-tear" style={{ width: tearW }} />
+            </motion.div>
           </div>
 
           {/* Zona para cortar: un poco más alta que la línea para que sea fácil con el dedo. */}
@@ -317,11 +369,130 @@ export function PackOpening({ count, color, color2, title, emoji, onDone }: { co
             </div>
           )}
         </motion.div>
-      </div>
+      )}
 
-      <motion.div className="dim pack-hint" animate={{ opacity: sealed ? 1 : 0 }}>
+      <motion.div className="dim pack-hint ppack-hint" animate={{ opacity: sealed ? 1 : 0 }}>
         Desliza el dedo por la línea punteada para cortarlo ✂️
       </motion.div>
+    </div>
+  );
+}
+
+type SPhase = 'in' | 'fan' | 'split' | 'riffle' | 'bridge' | 'square' | 'out';
+const MW = 70;
+const MH = 113;
+
+/**
+ * Al empezar la ronda: los sobres de todos caen a la mesa y se barajan, así nadie sabe cuál es
+ * de quién. Luego salen volando, uno para cada jugador.
+ */
+export function PackShuffle({ rolls, onDone }: { rolls: PackRoll[]; onDone: () => void }) {
+  const N = Math.max(3, Math.min(12, rolls.length));
+  const [phase, setPhase] = useState<SPhase>('in');
+  const timers = useRef<number[]>([]);
+  const list = useMemo(() => Array.from({ length: N }, (_, i) => ({ roll: rolls[i % rolls.length], x: (Math.random() - 0.5) * 10, r: (Math.random() - 0.5) * 12 })), [N, rolls]);
+
+  useEffect(() => {
+    const at = (ms: number, fn: () => void) => timers.current.push(window.setTimeout(fn, ms));
+    sfx.whoosh();
+    for (let i = 0; i < N; i++)
+      at(120 + i * 70, () => {
+        sfx.cardSlide(0.85 + i * 0.03);
+        if (i % 3 === 0) sfx.packCrinkle(0.3);
+      });
+    let t = 300 + N * 70;
+    const step = (ms: number, ph: SPhase, fx?: () => void) => {
+      at(t, () => {
+        setPhase(ph);
+        fx?.();
+      });
+      t += ms;
+    };
+    step(620, 'fan', () => {
+      sfx.sparkle();
+      haptic(10);
+    });
+    step(340, 'split', () => sfx.whoosh());
+    step(600, 'riffle', () => {
+      sfx.riffle(0.5);
+      sfx.packCrinkle(0.7);
+      haptic([4, 20, 4, 20, 4, 20, 4]);
+    });
+    step(460, 'bridge', () => sfx.cardSlide(0.8));
+    step(420, 'square', () => {
+      sfx.deckTap();
+      at(t + 140, () => sfx.deckTap());
+      haptic([15, 60, 15]);
+    });
+    const out = t;
+    step(0, 'out', () => {
+      for (let i = 0; i < N; i++) at(out + i * 45, () => sfx.cardSlide(1.1 + i * 0.02));
+      sfx.sparkle();
+    });
+    at(out + N * 45 + 520, onDone);
+    const list = timers.current;
+    return () => list.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const mid = (N - 1) / 2;
+  const half = Math.floor(N / 2);
+  const target = (i: number) => {
+    const k = i - mid;
+    const j = list[i];
+    const left = i < half;
+    switch (phase) {
+      case 'in':
+        return { x: j.x, y: -i * 1.6, rotate: j.r, opacity: 1, scale: 1 };
+      case 'fan':
+        return { x: k * 19, y: Math.abs(k) * 5, rotate: k * 7, opacity: 1, scale: 1 };
+      case 'split':
+        return { x: left ? -78 : 78, y: -(left ? i : i - half) * 1.6, rotate: left ? -12 : 12, opacity: 1, scale: 1 };
+      case 'riffle':
+        return { x: 0, y: -i * 1.3, rotate: i % 2 ? 1.5 : -1.5, opacity: 1, scale: 1 };
+      case 'bridge':
+        return { x: k * 9, y: -Math.sin((Math.PI * i) / Math.max(1, N - 1)) * 40, rotate: k * 4, opacity: 1, scale: 1 };
+      case 'square':
+        return { x: 0, y: -i * 1.3, rotate: 0, opacity: 1, scale: [1, 1.06, 1] };
+      case 'out': {
+        const a = (i / N) * Math.PI * 2 + 0.4;
+        return { x: Math.cos(a) * 300, y: Math.sin(a) * 380, rotate: j.r * 6, opacity: 0, scale: 0.6 };
+      }
+    }
+  };
+  const delay = (i: number) => {
+    if (phase === 'in') return 0.12 + i * 0.07;
+    if (phase === 'fan') return i * 0.02;
+    if (phase === 'riffle') return (i < half ? i * 2 : (i - half) * 2 + 1) * 0.04;
+    if (phase === 'bridge') return i * 0.012;
+    if (phase === 'out') return i * 0.045;
+    return 0;
+  };
+
+  const caption = phase === 'in' ? `${rolls.length} ${rolls.length === 1 ? 'sobre sellado' : 'sobres sellados'}` : phase === 'square' || phase === 'out' ? '¡Uno para cada quien!' : 'Barajando sobres…';
+
+  return (
+    <div className="pack-stage">
+      <motion.div key={caption} className="display pack-caption" initial={{ opacity: 0, y: -12, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }}>
+        <Glitch text={caption} hard={phase === 'out'} />
+      </motion.div>
+      <div className="shuffle-scene">
+        <div className="pack-deck" style={{ top: '50%' }}>
+          {list.map((p, i) => (
+            <motion.div
+              key={i}
+              className="pack-card"
+              style={{ width: MW, height: MH, marginLeft: -MW / 2, marginTop: -MH / 2, zIndex: i, transformOrigin: phase === 'fan' ? '50% 130%' : '50% 50%' }}
+              initial={{ x: 0, y: -520, rotate: -30, opacity: 0 }}
+              animate={target(i)}
+              transition={{ type: 'spring', stiffness: phase === 'in' ? 160 : 300, damping: phase === 'in' ? 16 : 24, delay: delay(i) }}
+            >
+              <MiniPack roll={p.roll} style={{ position: 'absolute', inset: 0 }} />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+      <div className="dim pack-hint">Cada sobre trae una carta secreta. 🤫</div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ const HOLD_MS = 380;
  * Mantener presionado para ver la carta; al soltar se oculta. El sonido y la vibración son
  * idénticos para civiles e impostores, para que nadie en la mesa pueda deducir el rol.
  */
-export function HoldToReveal({ front, onSeen, hint = 'Mantén presionado' }: { front: ReactNode; onSeen?: () => void; hint?: string }) {
+export function HoldToReveal({ front, onSeen, hint = 'Mantén presionado', glow }: { front: ReactNode; onSeen?: () => void; hint?: string; /** Halo detrás de la carta (igual para todos los roles). */ glow?: string }) {
   const [open, setOpen] = useState(false);
   const ring = useAnimationControls();
   const timer = useRef<number>(0);
@@ -46,6 +46,7 @@ export function HoldToReveal({ front, onSeen, hint = 'Mantén presionado' }: { f
     <GameCard
       flipped={open}
       front={front}
+      glow={glow}
       onPointerDown={down}
       onPointerUp={up}
       back={

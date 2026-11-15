@@ -1,35 +1,73 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
-import { CardBack } from '../components/GameCard';
 import { PlayerCard } from '../components/PlayerCard';
-import { PackOpening } from '../components/PackOpening';
+import { glowHalo, glowOf, MiniPack, PackShuffle, PersonalPack } from '../components/PackOpening';
 import { Avatar, Button, Handoff } from '../components/ui';
 import { CAT } from '../data/categories';
+import { fallbackPack, type PackRoll } from '../data/packs';
 import { THEME_BY_ID } from '../data/themes';
 import { isHere, useNet, useSeat } from '../net/state';
-import { useGame } from '../store/game';
+import { useGame, type Round } from '../store/game';
 
 export function Deal() {
   const { online } = useSeat();
   return online ? <DealOnline /> : <DealLocal />;
 }
 
-/** El sobre de la ronda, con los colores y el nombre de su categoría o tema. */
-function RoundPack({ onDone }: { onDone: () => void }) {
+/** El sobre que le tocó a un jugador (las rondas viejas, sin sobres guardados, usan uno de respaldo). */
+const rollFor = (round: Round, id: string): PackRoll => round.packs?.[id] ?? fallbackPack(round.n, round.order, id);
+
+/** Al empezar la ronda: los sobres de todos se barajan frente a la mesa. */
+function RoundShuffle({ onDone }: { onDone: () => void }) {
   const round = useGame((s) => s.round)!;
+  // Revueltos: el orden en que caen no dice de quién es cada sobre.
+  // Se calcula una sola vez: en sala la ronda cambia cada vez que alguien marca "listo".
+  const [rolls] = useState(() => [...round.order].sort(() => Math.random() - 0.5).map((id) => rollFor(round, id)));
+  return <PackShuffle rolls={rolls} onDone={onDone} />;
+}
+
+/** El sobre personal de un jugador; al abrirlo, su carta secreta aparece en el mismo lugar. */
+function PlayerPack({ playerId, onSeen, onOpened }: { playerId: string; onSeen: () => void; onOpened: () => void }) {
+  const round = useGame((s) => s.round)!;
+  const players = useGame((s) => s.players);
+  const roll = rollFor(round, playerId);
   const theme = round.theme ? THEME_BY_ID[round.theme] : undefined;
   const c = CAT[round.cat];
+  const edition = theme ? `${theme.emoji} Edición ${theme.name}` : `${c.emoji} Edición ${c.name}`;
   return (
-    <PackOpening
-      count={round.order.length}
-      color={theme?.color ?? c.color}
-      color2={theme ? '#2a1a4a' : c.color2}
-      title={theme?.name ?? c.name}
-      emoji={theme?.emoji ?? c.emoji}
-      onDone={onDone}
-    />
+    <PersonalPack roll={roll} owner={players.find((p) => p.id === playerId)?.name ?? ''} edition={edition} onOpened={onOpened}>
+      <PlayerCard playerId={playerId} onSeen={onSeen} glow={glowHalo(glowOf(roll))} />
+    </PersonalPack>
   );
+}
+
+/** Pila de sobres que faltan por abrir. */
+function PackPile({ rolls }: { rolls: PackRoll[] }) {
+  const shown = rolls.slice(0, 6).reverse();
+  return (
+    <div style={{ position: 'relative', width: 96, height: 100, marginBottom: 4 }}>
+      {shown.map((r, i) => (
+        <motion.div
+          key={i}
+          initial={{ y: -24, opacity: 0 }}
+          animate={{ y: -i * 3, opacity: 1, rotate: (i % 2 ? 1 : -1) * 4 }}
+          transition={{ delay: i * 0.04 }}
+          style={{ position: 'absolute', left: 22, top: 8, width: 54, height: 87 }}
+        >
+          <MiniPack roll={r} style={{ position: 'absolute', inset: 0 }} />
+        </motion.div>
+      ))}
+      <div className="label" style={{ position: 'absolute', right: -30, top: 38 }}>
+        ×{rolls.length}
+      </div>
+    </div>
+  );
+}
+
+/** Lo que va abajo mientras alguien tiene su sobre en la mano. */
+function CardButtonText({ opened, seen, done }: { opened: boolean; seen: boolean; done: string }) {
+  return <>{!opened ? 'Primero abre tu sobre ✂️' : !seen ? 'Primero mira tu carta' : done}</>;
 }
 
 /** Un solo teléfono: se pasa de mano en mano y cada quien ve su carta en secreto. */
@@ -39,18 +77,20 @@ function DealLocal() {
   const dealNext = useGame((s) => s.dealNext);
   // Solo se baraja antes de la primera carta de la ronda.
   const [phase, setPhase] = useState<'shuffle' | 'pass' | 'card'>(round.dealIdx === 0 ? 'shuffle' : 'pass');
+  const [opened, setOpened] = useState(false);
   const [seen, setSeen] = useState(false);
   const player = players[round.dealIdx];
   if (!player) return null;
   const last = round.dealIdx === players.length - 1;
   const theme = round.theme ? THEME_BY_ID[round.theme] : undefined;
   const color = theme?.color ?? CAT[round.cat].color;
-  const remaining = players.length - round.dealIdx;
+  const left = players.slice(round.dealIdx).map((p) => rollFor(round, p.id));
 
   const next = () => {
     sfx.whoosh();
     haptic(15);
     setSeen(false);
+    setOpened(false);
     setPhase('pass');
     dealNext();
   };
@@ -73,7 +113,7 @@ function DealLocal() {
       <AnimatePresence mode="wait">
         {phase === 'shuffle' ? (
           <motion.div key="shuffle" className="grow center content" exit={{ opacity: 0 }}>
-            <RoundPack onDone={() => setPhase('pass')} />
+            <RoundShuffle onDone={() => setPhase('pass')} />
           </motion.div>
         ) : phase === 'pass' ? (
           <motion.div
@@ -85,23 +125,7 @@ function DealLocal() {
             exit={{ x: -120, opacity: 0, rotate: -6 }}
             transition={{ type: 'spring', stiffness: 260, damping: 26 }}
           >
-            <div style={{ position: 'relative', width: 70, height: 66, marginBottom: 4 }}>
-              {Array.from({ length: Math.min(remaining, 8) }, (_, i) => (
-                <motion.div
-                  key={i}
-                  className="mini-back"
-                  initial={{ y: -20, opacity: 0 }}
-                  animate={{ y: -i * 2, opacity: 1, rotate: (i % 2 ? 1 : -1) * 3 }}
-                  transition={{ delay: i * 0.03 }}
-                  style={{ position: 'absolute', left: 12, top: 0, width: 46, height: 64, borderRadius: 7 }}
-                >
-                  <CardBack small />
-                </motion.div>
-              ))}
-              <div className="label" style={{ position: 'absolute', right: -34, top: 22 }}>
-                ×{remaining}
-              </div>
-            </div>
+            <PackPile rolls={left} />
             <Handoff />
             <div className="label">Pasa el teléfono a</div>
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.15, type: 'spring', stiffness: 300, damping: 14 }}>
@@ -111,7 +135,7 @@ function DealLocal() {
               {player.name}
             </div>
             <div className="dim" style={{ maxWidth: 300, lineHeight: 1.45 }}>
-              Que nadie más vea la pantalla. 🤫
+              Tiene un sobre esperándole. Que nadie más vea la pantalla. 🤫
             </div>
           </motion.div>
         ) : (
@@ -119,17 +143,17 @@ function DealLocal() {
             key={`card-${round.dealIdx}`}
             className="grow center content"
             style={{ gap: 14 }}
-            initial={{ y: -420, opacity: 0, scale: 0.4, rotate: -25 }}
-            animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ y: -300, opacity: 0, rotate: -12, scale: 0.8 }}
-            transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+            transition={{ duration: 0.25 }}
           >
             <div className="row" style={{ gap: 8 }}>
               <Avatar player={player} size={30} />
               <b>{player.name}</b>
-              <span className="dim">· tu carta secreta</span>
+              <span className="dim">· {opened ? 'tu carta secreta' : 'tu sobre'}</span>
             </div>
-            <PlayerCard playerId={player.id} onSeen={() => setSeen(true)} />
+            <PlayerPack playerId={player.id} onSeen={() => setSeen(true)} onOpened={() => setOpened(true)} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -150,7 +174,7 @@ function DealLocal() {
           </Button>
         ) : (
           <Button disabled={!seen} onClick={next} variant={last ? 'primary' : 'plain'}>
-            {!seen ? 'Primero mira tu carta' : last ? '¡Todos listos! 🔥' : 'Listo, pasar ➜'}
+            <CardButtonText opened={opened} seen={seen} done={last ? '¡Todos listos! 🔥' : 'Listo, pasar ➜'} />
           </Button>
         )}
       </div>
@@ -171,6 +195,7 @@ function DealOnline() {
   const [shuffling, setShuffling] = useState(round.ready.length === 0);
   const [seen, setSeen] = useState(false);
   const [open, setOpen] = useState(false);
+  const [opened, setOpened] = useState(false);
   // Marcados como listos en este teléfono (por si la confirmación del anfitrión tarda un momento).
   const [sent, setSent] = useState<string[]>([]);
   const mine = round.order.filter((id) => seats.includes(id));
@@ -188,6 +213,7 @@ function DealOnline() {
     setSent((l) => [...l, current]);
     setSeen(false);
     setOpen(false);
+    setOpened(false);
     markReady(current);
   };
 
@@ -209,7 +235,7 @@ function DealOnline() {
       <AnimatePresence mode="wait">
         {shuffling ? (
           <motion.div key="shuffle" className="grow center content" exit={{ opacity: 0 }}>
-            <RoundPack onDone={() => setShuffling(false)} />
+            <RoundShuffle onDone={() => setShuffling(false)} />
           </motion.div>
         ) : !mine.length ? (
           <motion.div key="watch" className="grow center content" style={{ gap: 12 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -239,8 +265,9 @@ function DealOnline() {
             exit={{ x: -120, opacity: 0, rotate: -6 }}
             transition={{ type: 'spring', stiffness: 260, damping: 26 }}
           >
+            <PackPile rolls={pending.map((id) => rollFor(round, id))} />
             {current !== me && <Handoff />}
-            <div className="label">{current === me ? 'Tu carta' : 'Pasa el teléfono a'}</div>
+            <div className="label">{current === me ? 'Tu sobre' : 'Pasa el teléfono a'}</div>
             <Avatar player={P(current)} size={110} mood="happy" />
             <div className="h1" style={{ color: P(current).color, textShadow: `0 0 30px ${P(current).color}88` }}>
               {P(current).name}
@@ -254,15 +281,16 @@ function DealOnline() {
             key={`card-${current}`}
             className="grow center content"
             style={{ gap: 14 }}
-            initial={{ y: -420, opacity: 0, scale: 0.4, rotate: -25 }}
-            animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
-            transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ y: -300, opacity: 0, rotate: -12, scale: 0.8 }}
+            transition={{ duration: 0.25 }}
           >
             <div className="row dim" style={{ fontWeight: 700, gap: 8 }}>
               <Avatar player={P(current)} size={26} />
-              {current === me ? 'Tu carta secreta · que nadie más la vea 🤫' : `Carta de ${P(current).name} 🤫`}
+              {current === me ? (opened ? 'Tu carta secreta · que nadie más la vea 🤫' : 'Tu sobre · ábrelo sin que nadie vea 🤫') : `${opened ? 'Carta' : 'Sobre'} de ${P(current).name} 🤫`}
             </div>
-            <PlayerCard playerId={current} onSeen={() => setSeen(true)} />
+            <PlayerPack playerId={current} onSeen={() => setSeen(true)} onOpened={() => setOpened(true)} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -286,7 +314,7 @@ function DealOnline() {
                 </Button>
               ) : (
                 <Button disabled={!seen} onClick={done}>
-                  {!seen ? 'Primero mira tu carta' : pending.length > 1 ? 'Listo, pasar ➜' : 'Ya la vi, listo ✔'}
+                  <CardButtonText opened={opened} seen={seen} done={pending.length > 1 ? 'Listo, pasar ➜' : 'Ya la vi, listo ✔'} />
                 </Button>
               ))}
             {host && !current && waiting.length > 0 && (

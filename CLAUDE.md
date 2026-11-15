@@ -33,10 +33,11 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
   - `events.ts`: eventos de ronda, acentos mexicanos y eventos ocultos.
   - `challenges.ts`: eventos de turno, misiones secretas y frecuencias (`INTENSITY`).
   - `scoring.ts`: puntos. `vote.ts`: conteo de votos y empates.
-- `src/data/`: 836 cartas en `items/*.ts`, categorías, temas de Mezcla y eventos de turno o misiones (`challenges.ts`, con las reglas de seguridad al inicio).
-- `src/screens/`: una pantalla por fase. `Intro` (ruleta), `Deal` (sobre y reparto), `Discuss` (pistas), `Vote`, `Reveal`, `Score`, `Lobby` y `Online` (salas), `Setup` (reglas), `Events` (catálogo).
+- `src/data/`: 836 cartas en `items/*.ts`, categorías, temas de Mezcla y eventos de turno o misiones (`challenges.ts`, con las reglas de seguridad al inicio). `packs.ts`: diseños de sobre, brillos y `rollPacks` (se guarda en `round.packs`).
+- `src/screens/`: una pantalla por fase. `Intro` (ruleta), `Deal` (sobres y reparto), `Discuss` (pistas), `Vote`, `Reveal` (veredicto → última oportunidad → verdad → eventos), `LastChance` (la adivinanza del impostor), `Score`, `Lobby` y `Online` (salas), `Setup` (reglas), `Events` (catálogo).
 - `src/components/`:
-  - `PackOpening.tsx`: el sobre que se corta y el barajeo.
+  - `PackOpening.tsx`: `PersonalPack` (el sobre de cada jugador: corte, luz, brillo y carta que sale girando), `PackShuffle` (los sobres de todos se barajan al empezar), `PackArt` y `MiniPack`.
+  - `PackGallery.tsx`: galería de sobres y brillos en Ajustes, con sobre de prueba.
   - `Wheel.tsx`: la ruleta.
   - `GameCard.tsx`: las cartas.
   - `Emo.tsx`: emojis animados.
@@ -49,6 +50,8 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 ## Reglas de diseño que hay que respetar
 
 - **Nada debe delatar información secreta.** Los colores, fondos, escenas y sonidos dependen de la categoría o del tema, nunca de la carta. El sonido y la vibración al ver la carta son iguales para civiles e impostores.
+- **Sobres:** el diseño y el brillo se sortean con su propio generador y sin mirar el rol (en Mezcla cuenta el tema, no la categoría de la carta civil). Ningún brillo usa el azul de civiles (#2ee6ff) ni el rojo de impostores (#ff2e4d). `packs.test.ts` lo verifica.
+- **Última oportunidad:** el impostor atrapado adivina antes de ver la verdad. Con varios, lo que elige cada uno queda guardado (`guessPicks`) y se revela al final.
 - **Impostores:**
   - Siempre hay más civiles que impostores.
   - En automático: 1 hasta 5 jugadores, 2 hasta 8, 3 hasta 11, 4 hasta 15 y 5 con más.
@@ -71,10 +74,11 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 2. Multijugador por sala (código y QR), eventos rediseñados (acentos mexicanos, +18, misiones secretas, eventos ocultos, frecuencia configurable), eliminación corregida, voto secreto, ruleta real, temas visuales y mejor modo sin conexión.
 3. Impostores sin límite fijo y modo equipo, salas de hasta 20 con jugadores sin teléfono, todo animado (avatares, emojis, escenas, lluvias, reacciones) y actualizaciones automáticas.
 4. Sobre de cartas que se corta con el dedo, barajeo animado y sonidos del sobre sintetizados.
+5. Un sobre personal por jugador (8 diseños, 6 brillos por rareza), galería de sobres en Ajustes y "Última oportunidad" con animación propia. El impostor atrapado ahora adivina ANTES de ver la verdad (antes veía la carta civil en "la verdad" y luego adivinaba).
 
 ## Pendiente o sin verificar
 
-- No se ha probado en celulares reales: sensación al cortar el sobre, sonido, vibración y salas con el servidor público de PeerJS.
+- No se ha probado en celulares reales: sensación al cortar el sobre, brillo y sonido del sobre personal, vibración y salas con el servidor público de PeerJS.
 - La partida de 10 jugadores con 3 impostores funcionó como se esperaba: cada impostor tiene carta distinta, lo cual al principio confundió a la mesa.
 
 ## Preferencias del dueño

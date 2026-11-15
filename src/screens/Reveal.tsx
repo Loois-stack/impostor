@@ -15,6 +15,7 @@ import { burst, flash, shake } from '../fx/fx';
 import { useSeat } from '../net/state';
 import { pendingJudgments, roundStatus, useGame, type Player } from '../store/game';
 import { secretEvent } from '../store/view';
+import { LastChance } from './LastChance';
 
 const LEVEL_TXT = { 1: '🔥 Casi idénticas', 2: '⚖️ Parecidas', 3: '🎲 Lejanas' } as const;
 
@@ -85,8 +86,8 @@ function Waiting({ text = 'Esperando al anfitrión…' }: { text?: string }) {
 export function Reveal() {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
-  const { setStep, guess, nextGuess, setChallengeResult, setMissionResult, finishRound, continueRound } = useGame();
-  const { online, me, host, seats } = useSeat();
+  const { setStep, setChallengeResult, setMissionResult, finishRound, continueRound } = useGame();
+  const { host } = useSeat();
   // El suspenso es una animación local; el resto de pasos los marca el store (y así van a la par en sala).
   const [suspense, setSuspense] = useState(round.step === 'verdict');
   const phase = round.step === 'verdict' && suspense ? 'suspense' : round.step;
@@ -184,31 +185,14 @@ export function Reveal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round.step]);
 
-  // Efectos cuando el impostor atrapado elige carta.
-  useEffect(() => {
-    if (!round.guessPick) return;
-    if (round.guessPick === round.civil) {
-      sfx.fanfare();
-      emojiRain(['🧠', '🎯', '😈']);
-      burst({ kind: 'confetti', colors: ['#ff2e4d', '#ffd23d', '#fff'], count: 120 });
-      haptic([40, 40, 40, 40, 120]);
-    } else {
-      sfx.fail();
-      shake(12, 400);
-      haptic([200]);
-    }
-  }, [round.guessPick, round.civil]);
-
   const afterTruth = () => {
-    if (caught.length && !round.nobodyVote) return setStep('guess');
     if (judgments.length) return setStep('challenges');
     finishRound();
   };
+  // Los impostores atrapados adivinan ANTES de ver la verdad (si no, ya sabrían la respuesta).
+  const lastChance = caught.length > 0 && !round.nobodyVote;
+  const guessPicks = round.guessPicks ?? {};
 
-  const guesser = caught[round.guessIdx];
-  const picked = round.guessPick;
-  const mineGuess = !online || seats.includes(guesser);
-  const canGuess = !picked && mineGuess;
   const allJudged = judgments.every((j) => (j.mission ? round.missionResults[j.player] : round.challengeResults[j.player]) !== undefined);
 
   const control = (node: ReactNode, waiting?: string) => (host ? node : <Waiting text={waiting} />);
@@ -299,7 +283,18 @@ export function Reveal() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.2 }} style={{ width: '100%' }}>
               {control(
                 status.over ? (
-                  <Button onClick={() => setStep('truth')}>Ver la verdad 👁️</Button>
+                  lastChance ? (
+                    <Button
+                      onClick={() => {
+                        sfx.whoosh();
+                        setStep('guess');
+                      }}
+                    >
+                      🎯 Última oportunidad {caught.length > 1 ? 'de los impostores' : 'del impostor'}
+                    </Button>
+                  ) : (
+                    <Button onClick={() => setStep('truth')}>Ver la verdad 👁️</Button>
+                  )
                 ) : (
                   <Button
                     onClick={() => {
@@ -388,6 +383,13 @@ export function Reveal() {
                   🔎 El detective era <Avatar player={P(round.detective)} size={22} /> <b>{P(round.detective).name}</b>
                 </motion.div>
               )}
+              {caught
+                .filter((id) => guessPicks[id])
+                .map((id, i) => (
+                  <motion.div key={id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.4 + i * 0.1 }} className="chip" style={{ borderColor: round.guessed[id] ? '#39ff88' : '#ff5470' }}>
+                    🎯 <b>{P(id).name}</b> {round.guessed[id] ? `adivinó la carta · +${PTS.impGuess}` : `eligió ${BY_ID[guessPicks[id]]?.name ?? '?'}`}
+                  </motion.div>
+                ))}
             </div>
 
             {decoyCards.length <= 1 ? (
@@ -423,54 +425,13 @@ export function Reveal() {
             </div>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2 }}>
               {control(
-                <Button onClick={afterTruth}>
-                  {caught.length && !round.nobodyVote ? '🎯 Última oportunidad del impostor' : judgments.length ? '🎭 Revisar eventos y misiones' : '🏆 Ver puntuación'}
-                </Button>,
+                <Button onClick={afterTruth}>{judgments.length ? '🎭 Revisar eventos y misiones' : '🏆 Ver puntuación'}</Button>,
               )}
             </motion.div>
           </motion.div>
         )}
 
-        {phase === 'guess' && guesser && (
-          <motion.div key={`g${round.guessIdx}`} className="grow stack content" style={{ gap: 12, minHeight: 0 }} initial={{ opacity: 0, x: 80 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -80 }}>
-            <div className="row" style={{ gap: 12 }}>
-              <Avatar player={P(guesser)} size={48} />
-              <div>
-                <div className="label">{online && me === guesser ? '¡Te toca a ti!' : mineGuess ? `Dale el teléfono a ${P(guesser).name}` : `Elige ${P(guesser).name}`}</div>
-                <div className="h2" style={{ fontSize: 28 }}>
-                  ¿Cuál era la carta de los civiles?
-                </div>
-              </div>
-            </div>
-            <div className="dim" style={{ fontSize: 13 }}>
-              Si adivina, gana +{PTS.impGuess} aunque lo hayan atrapado.
-            </div>
-            <div className="scroll">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
-                {options.map((o, i) => (
-                  <MiniCard
-                    key={o.id}
-                    item={o}
-                    cat={o.cat}
-                    delay={i * 0.06}
-                    onClick={canGuess ? () => guess(o.id) : undefined}
-                    state={picked ? (o.id === civil.id ? 'right' : o.id === picked ? 'wrong' : 'dim') : undefined}
-                  />
-                ))}
-              </div>
-            </div>
-            {picked ? (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="stack" style={{ gap: 10 }}>
-                <div className="center display" style={{ fontSize: 34, color: picked === civil.id ? '#39ff88' : '#ff2e4d' }}>
-                  {picked === civil.id ? `¡ADIVINÓ! +${PTS.impGuess}` : '¡FALLÓ!'}
-                </div>
-                {control(<Button onClick={() => nextGuess()}>Continuar ➜</Button>)}
-              </motion.div>
-            ) : (
-              !mineGuess && <Waiting text={`${P(guesser).name} está eligiendo…`} />
-            )}
-          </motion.div>
-        )}
+        {phase === 'guess' && <LastChance key={`g${round.guessIdx}`} options={options} />}
 
         {phase === 'challenges' && (
           <motion.div key="c" className="grow stack content" style={{ gap: 12, minHeight: 0 }} initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}>

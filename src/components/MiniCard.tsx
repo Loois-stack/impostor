@@ -14,6 +14,7 @@ export function MiniCard({
   state,
   style,
   delay = 0,
+  still,
   children,
 }: {
   item: Item | null;
@@ -21,17 +22,20 @@ export function MiniCard({
   label?: string;
   color?: string;
   onClick?: () => void;
-  state?: 'right' | 'wrong' | 'dim';
+  /** 'chosen': la elegida, sin decir todavía si acertó. */
+  state?: 'right' | 'wrong' | 'dim' | 'chosen';
   style?: CSSProperties;
   delay?: number;
+  /** Sin animación de entrada (cuando la anima quien la contiene). */
+  still?: boolean;
   children?: ReactNode;
 }) {
   const c = CAT[cat];
-  const border = state === 'right' ? '#39ff88' : state === 'wrong' ? '#ff2e4d' : color ?? 'rgba(255,255,255,.15)';
+  const border = state === 'right' ? '#39ff88' : state === 'wrong' ? '#ff2e4d' : state === 'chosen' ? '#ffd23d' : color ?? 'rgba(255,255,255,.15)';
   return (
     <motion.button
-      initial={{ opacity: 0, y: 40, rotateY: 90 }}
-      animate={{ opacity: state === 'dim' ? 0.35 : 1, y: 0, rotateY: 0, scale: state === 'right' ? 1.05 : 1 }}
+      initial={still ? false : { opacity: 0, y: 40, rotateY: 90 }}
+      animate={{ opacity: state === 'dim' ? 0.35 : 1, y: state === 'chosen' ? -6 : 0, rotateY: 0, scale: state === 'right' || state === 'chosen' ? 1.05 : 1 }}
       transition={{ delay, type: 'spring', stiffness: 220, damping: 20 }}
       whileTap={onClick ? { scale: 0.94 } : undefined}
       onClick={onClick}
@@ -42,7 +46,7 @@ export function MiniCard({
         overflow: 'hidden',
         background: '#0d0b14',
         border: `2px solid ${border}`,
-        boxShadow: state === 'right' ? '0 0 30px #39ff8888' : color ? `0 0 26px ${color}55` : '0 10px 30px rgba(0,0,0,.5)',
+        boxShadow: state === 'right' ? '0 0 30px #39ff8888' : state === 'chosen' ? '0 0 34px #ffd23d99' : color ? `0 0 26px ${color}55` : '0 10px 30px rgba(0,0,0,.5)',
         display: 'flex',
         flexDirection: 'column',
         textAlign: 'left',
