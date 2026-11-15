@@ -208,7 +208,7 @@ export function ReactFab({ onReact }: { onReact: (e: string) => void }) {
                 key={e}
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                transition={{ delay: i * 0.025, type: 'spring', stiffness: 500, damping: 18 }}
+                transition={{ delay: i * 0.012, type: 'spring', stiffness: 500, damping: 18 }}
                 whileTap={{ scale: 1.4 }}
                 onClick={() => {
                   haptic(8);

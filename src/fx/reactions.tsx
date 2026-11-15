@@ -6,7 +6,11 @@ import { useGame } from '../store/game';
 import { usePrefs } from '../store/prefs';
 
 /** Reacciones permitidas (también es la lista que valida el anfitrión). */
-export const REACTIONS = ['😂', '😱', '🤔', '🤨', '🔪', '👀', '🫣', '🤡', '🔥', '👏'];
+export const REACTIONS = [
+  ...['😂', '🤣', '😱', '🤔', '🤨', '👀', '🫣'],
+  ...['🫵', '🔪', '🐔', '😝', '🤡', '😭', '💀'],
+  ...['😴', '🤫', '🍿', '🥁', '🎺', '🔥', '👏'],
+];
 
 /** Cómo se mueve cada reacción mientras suena (va al compás de su sonido). */
 const MOVES: Record<string, string> = {
@@ -20,6 +24,17 @@ const MOVES: Record<string, string> = {
   '🤡': 'honk',
   '🔥': 'fire',
   '👏': 'clap',
+  '🤣': 'rofl',
+  '🫵': 'point',
+  '🐔': 'cluck',
+  '😝': 'raspberry',
+  '😭': 'cry',
+  '💀': 'dead',
+  '😴': 'snore',
+  '🤫': 'shush',
+  '🍿': 'popcorn',
+  '🥁': 'drum',
+  '🎺': 'sad',
 };
 
 interface Floating {
@@ -48,7 +63,7 @@ export function floatReaction(e: string, from?: string) {
 export function showReaction(e: string, from?: string, mine = !from) {
   floatReaction(e, from);
   const mode = usePrefs.getState().reactSound;
-  const played = (mode === 'all' || (mode === 'mine' && mine)) && reactionSound(e);
+  const played = (mode === 'all' || (mode === 'mine' && mine)) && reactionSound(e, from);
   if (mine && !played) sfx.select();
 }
 

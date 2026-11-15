@@ -46,7 +46,8 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 - `src/net/`: multijugador con PeerJS (WebRTC). El anfitrión tiene la partida de verdad; los invitados reciben una copia y mandan acciones (`NetAction` en `link.ts`) que el anfitrión valida en `remote()`. Si cambian los mensajes, sube `PROTOCOL` en `net.ts`.
 - `src/fx/`: fondo animado, temas visuales (Neón, Fiesta, Casino), escenas de emojis, lluvias, reacciones y partículas.
 - `src/audio/sfx.ts`: **todos los sonidos y la música se sintetizan con Web Audio**. Son originales, sin archivos ni licencias y funcionan sin internet. Mantener esa regla para sonidos nuevos.
-- `src/audio/reactions.ts`: sonido de cada reacción. Las voces (risas, grito, "mmm", "¿eeeh?") usan `speak()`, un sintetizador de formantes (pulso glotal + 3 filtros por vocal + aire para la "j"); los efectos usan ruido y osciladores. Volúmenes igualados en `REACTION_VOICES` (medidos para bocina de celular). Se oyen en todos los teléfonos según `prefs.reactSound`; máximo 3 a la vez. **No usar sonidos de memes ni grabaciones ajenas** (derechos de autor): todo se crea desde cero.
+- `src/audio/voicebox.ts`: caja de voz que calcula muestra por muestra (formantes en cascada estilo Klatt): pulso glotal con jitter/shimmer, aire sincronizado, carraspeo (`creak`), nasal y "j". Es pura y probada (`voice.test.ts`). `voices.ts` tiene los guiones (`Take` con puntos clave): risas (`guffaw`, `giggle`, `evilLaugh`, `snortLaugh`, `hysterical`), grito, "mmm", "¿eeeh?", "uuuy", "¡TÚ!", llanto, gallina, trompetilla y ronquido. `speakerFor(id)` da a cada jugador la misma voz en todos los teléfonos.
+- `src/audio/reactions.ts`: sonido de cada reacción (voz + efectos de Web Audio). Volúmenes y corte de graves en `REACTION_VOICES`, igualados para la bocina del celular (medir con un render sin conexión antes de cambiarlos). La voz se calcula después de dibujar la burbuja (en un celular lento tarda 20–80 ms). Se oyen en todos los teléfonos según `prefs.reactSound`; máximo 3 a la vez. **No usar sonidos de memes ni grabaciones ajenas** (derechos de autor): todo se crea desde cero.
 - `src/services/`: fotos para jugar sin conexión (CORS, con reintentos ante el límite 429 de Wikimedia), actualizaciones y pantalla encendida.
 
 ## Reglas de diseño que hay que respetar
@@ -83,6 +84,7 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 6. Sala: botón rojo para pedir votación (mayoría → se vota al terminar la vuelta) y salir de la partida con confirmación sin trabar la ronda. También se arregló que al salir de una sala la pantalla quedara en negro y que la app regresara siempre a "Entrar a una sala".
 7. Sala: si se desconectan todos, el anfitrión vuelve a la sala con la ronda en pausa; los invitados sin anfitrión pueden reintentar, ir al menú o volver a entrar con el código puesto.
 8. Reacciones con sonido propio hecho desde cero (risa sintetizada con tres estilos, grito, navaja, aplausos, etc.) y movimiento al compás. Ajuste "De todos / Solo mías / Apagados" y tablero para probarlas. Se arregló que quien mandaba una reacción en sala la viera dos veces.
+9. Caja de voz nueva (mucho más natural que los filtros de antes), voz propia por jugador, risa de cerdito y ataque de risa, y 11 reacciones nuevas graciosas (21 en total) en un selector de cuadrícula.
 
 ## Pendiente o sin verificar
 

@@ -12,6 +12,7 @@ import { floatReaction, REACTIONS } from '../fx/reactions';
 import { SKIN_IDS, SKINS, skinVars } from '../fx/skins';
 import { downloadAll, offlineStatus, type OfflineStatus } from '../services/images';
 import { AVATAR_CHOICES, useGame } from '../store/game';
+import { publicId } from '../net/state';
 import { usePrefs } from '../store/prefs';
 
 /** Sonidos de las reacciones: cuáles suenan en este teléfono y un tablero para probarlos. */
@@ -23,7 +24,7 @@ function ReactionSounds() {
     <div className="panel stack" style={{ gap: 8 }}>
       <b>😂 Sonidos de las reacciones</b>
       <div className="dim" style={{ fontSize: 13, lineHeight: 1.4 }}>
-        Cada reacción tiene su propio sonido, hecho desde cero en el teléfono (sin grabaciones). La risa nunca suena igual dos veces. En una sala lo oyen todos.
+        Cada reacción tiene su propio sonido, hecho desde cero en el teléfono (sin grabaciones). Cada jugador tiene su propia voz y la risa nunca sale igual dos veces. En una sala lo oyen todos.
       </div>
       <Segmented
         id="reactSound"
@@ -44,7 +45,7 @@ function ReactionSounds() {
             onClick={() => {
               sfx.unlock();
               floatReaction(e);
-              if (!reactionSound(e, true)) sfx.select();
+              if (!reactionSound(e, publicId(usePrefs.getState().deviceId), true)) sfx.select();
             }}
           >
             {e}
@@ -52,7 +53,7 @@ function ReactionSounds() {
         ))}
       </div>
       <div className="dim" style={{ fontSize: 12 }}>
-        {sound ? 'Toca uno para escucharlo.' : 'Prende los efectos de sonido para escucharlos.'}
+        {sound ? 'Toca uno para escucharlo: así suena tu voz en una sala.' : 'Prende los efectos de sonido para escucharlos.'}
       </div>
     </div>
   );

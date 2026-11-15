@@ -1893,18 +1893,84 @@ input {
   0%, 100% { transform: scale(1); }
   25% { transform: scale(0.8) rotate(-6deg); }
 }
+.rx-rofl { animation: rx-rofl 0.22s ease-in-out 10 alternate; }
+@keyframes rx-rofl {
+  from { transform: rotate(-24deg) translateY(2px); }
+  to { transform: rotate(24deg) translateY(-6px); }
+}
+.rx-point { animation: rx-point 0.45s cubic-bezier(0.2, 1.8, 0.4, 1) both, rx-shiver 0.06s linear 0.7s 16 alternate; }
+@keyframes rx-point {
+  0% { transform: scale(0.5); }
+  40% { transform: scale(1.55); }
+  100% { transform: scale(1.15); }
+}
+.rx-cluck { animation: rx-cluck 0.16s ease-in-out 5, rx-hop 0.4s ease-out 0.8s; }
+@keyframes rx-cluck {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  50% { transform: translate(5px, 4px) rotate(14deg); }
+}
+@keyframes rx-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-16px) scale(1.15); }
+}
+.rx-raspberry { animation: rx-raspberry 0.05s linear 18 alternate; }
+@keyframes rx-raspberry {
+  from { transform: scale(1.12, 0.92) translateX(-2px); }
+  to { transform: scale(0.94, 1.06) translateX(2px); }
+}
+.rx-cry { animation: rx-cry 0.18s ease-in-out 10 alternate; }
+@keyframes rx-cry {
+  from { transform: scale(1.06, 0.92) translateY(2px); }
+  to { transform: scale(0.96, 1.06) translateY(-2px); }
+}
+.rx-dead { animation: rx-dead 1.4s cubic-bezier(0.5, 0, 0.5, 1) both; transform-origin: 50% 100%; }
+@keyframes rx-dead {
+  0% { transform: rotate(0) translateY(0); }
+  50% { transform: rotate(-90deg) translateY(0); }
+  58% { transform: rotate(-90deg) translateY(-8px) scale(1.15, 0.85); }
+  66%, 100% { transform: rotate(-90deg) translateY(0); }
+}
+.rx-snore { animation: rx-snore 1.6s ease-in-out both; }
+@keyframes rx-snore {
+  0% { transform: scale(1); }
+  55% { transform: scale(1.28); }
+  70% { transform: scale(1.28); }
+  100% { transform: scale(0.95) rotate(-6deg); }
+}
+.rx-shush { animation: rx-shush 0.9s ease-out both; }
+@keyframes rx-shush {
+  0% { transform: scale(1.3); }
+  30%, 100% { transform: scale(1) translateY(2px); }
+}
+.rx-popcorn { animation: rx-popcorn 0.18s ease-out 8; }
+@keyframes rx-popcorn {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(-9px) rotate(8deg); }
+}
+.rx-drum { animation: rx-drum 0.17s ease-out 2, rx-scream 0.05s linear 0.4s 14 alternate; }
+@keyframes rx-drum {
+  0%, 100% { transform: scale(1); }
+  30% { transform: scale(1.25, 0.8); }
+}
+.rx-sad { animation: rx-sad 2s steps(1, end) both; transform-origin: 50% 80%; }
+@keyframes rx-sad {
+  0% { transform: rotate(0) translateY(0); }
+  18% { transform: rotate(-8deg) translateY(2px); }
+  36% { transform: rotate(-16deg) translateY(4px); }
+  54% { transform: rotate(-26deg) translateY(8px) scale(0.95); }
+}
 @media (prefers-reduced-motion: reduce) {
   .rx { animation: none !important; }
 }
 /* Ajustes: probar los sonidos de las reacciones. */
 .rx-try {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 6px;
 }
 .rx-try button {
-  font-size: 28px;
-  padding: 8px 0;
+  font-size: 24px;
+  padding: 7px 0;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1932,7 +1998,7 @@ input {
   z-index: 30;
   display: flex;
   flex-direction: row-reverse;
-  align-items: center;
+  align-items: flex-end;
   gap: 4px;
 }
 .react-fab > button,
@@ -1948,23 +2014,22 @@ input {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
 .react-list {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 99px;
-  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  padding: 6px;
+  width: min(300px, calc(100vw - 78px));
+  border-radius: 22px;
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  max-width: calc(100vw - 80px);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 .react-list button {
-  width: 40px;
-  height: 40px;
-  font-size: 22px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  font-size: 21px;
   box-shadow: none;
-  flex-shrink: 0;
 }
 
 /* Pase del teléfono de mano en mano. */

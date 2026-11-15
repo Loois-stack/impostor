@@ -1,60 +1,15 @@
 /**
- * Sonidos de las reacciones, hechos desde cero con Web Audio (sin grabaciones ni memes ajenos).
+ * Sonidos de las reacciones, hechos desde cero en el teléfono (sin grabaciones ni memes ajenos).
  *
- * Las voces (risa, grito, "mmm", "¿eeeh?") salen de un sintetizador de formantes: un pulso como
- * el de las cuerdas vocales pasa por tres filtros que imitan la forma de la boca para cada vocal,
- * con aire ("j"), vibrato e inestabilidad natural. Cada risa se arma al momento, así que nunca
- * suena exactamente igual (y si en la sala ríen varios teléfonos, suena a una mesa riéndose).
+ * Las voces (risas, grito, "mmm", "¡TÚ!", llanto, gallina…) salen de la caja de voz
+ * (`voicebox.ts`) con los guiones de `voices.ts`; cada jugador tiene su propia voz, la misma en
+ * todos los teléfonos. Los efectos (navaja, bocina, tambor, trombón…) se arman con Web Audio.
  */
 import { sfx, type Kit } from './sfx';
+import { render, type Take } from './voicebox';
+import * as V from './voices';
 
-type Vowel = 'a' | 'e' | 'i' | 'o' | 'u' | 'm';
-/** Formantes por vocal: frecuencia, Q (qué tan angosto) y volumen. */
-type Formant = readonly [f: number, q: number, g: number];
-
-const VOWELS: Record<Vowel, readonly Formant[]> = {
-  a: [[850, 6, 1], [1250, 8, 0.75], [2800, 11, 0.4]],
-  e: [[500, 5, 1], [1950, 10, 0.6], [2750, 11, 0.38]],
-  i: [[330, 4, 0.8], [2450, 11, 0.7], [3250, 13, 0.4]],
-  o: [[560, 5, 1], [950, 7, 0.65], [2650, 11, 0.22]],
-  u: [[370, 4, 1], [820, 6, 0.55], [2550, 11, 0.14]],
-  // Boca cerrada: un zumbido nasal. Se refuerzan los armónicos medios para que se oiga en bocinas de celular.
-  m: [[300, 2.2, 0.8], [1150, 5, 0.42], [2400, 9, 0.08]],
-};
-
-interface Syl {
-  v: Vowel;
-  /** Inicio y duración (segundos, desde que empieza la voz). */
-  at: number;
-  dur: number;
-  /** Tono al empezar y al terminar. */
-  f: number;
-  f2?: number;
-  vol?: number;
-  /** Segundos de aire antes de la vocal (la "j" de "ja"). */
-  h?: number;
-  /** Aire mezclado en la vocal. */
-  breath?: number;
-  /** Se liga con la sílaba siguiente sin cortar el sonido. */
-  tie?: boolean;
-}
-
-interface VoiceOpts {
-  vol: number;
-  at?: number;
-  /** >1 voz más chica (formantes más agudos), <1 más grande. */
-  shift?: number;
-  vib?: [rate: number, cents: number];
-  /** Inestabilidad del tono, en cents. */
-  jitter?: number;
-  /** Segunda voz desafinada (cents): da aspereza, para gritos. */
-  rough?: number;
-  /** Raspado de la "j" mexicana. */
-  rasp?: number;
-  wet?: number;
-  pan?: number;
-}
-
+type R = () => number;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
 function output(k: Kit, node: AudioNode, wet: number, pan = 0) {
@@ -72,115 +27,20 @@ function output(k: Kit, node: AudioNode, wet: number, pan = 0) {
   }
 }
 
-/** Sintetiza una voz. Devuelve cuánto dura. */
-function speak(k: Kit, syls: Syl[], o: VoiceOpts) {
-  const { ctx } = k;
-  const t0 = ctx.currentTime + 0.01 + (o.at ?? 0);
-  const length = Math.max(...syls.map((s) => s.at + s.dur));
-  const end = t0 + length + 0.25;
-  const shift = o.shift ?? 1;
-
-  // Fuente: pulso de las cuerdas vocales (y una segunda, desafinada, si la voz es áspera).
-  const srcs = [ctx.createOscillator()];
-  if (o.rough) srcs.push(ctx.createOscillator());
-  const tilt = ctx.createBiquadFilter();
-  tilt.type = 'lowpass';
-  tilt.frequency.value = 3800;
-  tilt.Q.value = 0.5;
-  const voiced = ctx.createGain();
-  voiced.gain.setValueAtTime(0, t0);
-  tilt.connect(voiced);
-  srcs.forEach((s, n) => {
-    s.type = 'sawtooth';
-    const base = n ? o.rough! : 0;
-    s.detune.setValueAtTime(base, t0);
-    const jit = o.jitter ?? 12;
-    for (let t = t0 + 0.03; t < end; t += 0.03 + Math.random() * 0.02) s.detune.linearRampToValueAtTime(base + rnd(-jit, jit), t);
-    s.connect(tilt);
-  });
-  if (o.vib) {
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = o.vib[0];
-    const depth = ctx.createGain();
-    depth.gain.value = o.vib[1];
-    lfo.connect(depth);
-    srcs.forEach((s) => depth.connect(s.detune));
-    lfo.start(t0);
-    lfo.stop(end);
-  }
-
-  // Aire: ruido que pasa por la misma "boca" (suena a "j" o a respiración).
-  const air = ctx.createBufferSource();
-  air.buffer = k.noise;
-  air.loop = true;
-  const airHp = ctx.createBiquadFilter();
-  airHp.type = 'highpass';
-  airHp.frequency.value = 450;
-  const breath = ctx.createGain();
-  breath.gain.setValueAtTime(0, t0);
-  air.connect(airHp).connect(breath);
-
-  const mouth = ctx.createGain();
-  mouth.gain.value = o.vol;
-  const first = VOWELS[syls[0].v];
-  const bank = first.map(([f, q, g]) => {
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.setValueAtTime(f * shift, t0);
-    bp.Q.setValueAtTime(q, t0);
-    const amp = ctx.createGain();
-    amp.gain.setValueAtTime(g, t0);
-    voiced.connect(bp);
-    breath.connect(bp);
-    bp.connect(amp).connect(mouth);
-    return { bp, amp };
-  });
-  if (o.rasp) {
-    const j = ctx.createBiquadFilter();
-    j.type = 'bandpass';
-    j.frequency.value = 1700 * shift;
-    j.Q.value = 1.3;
-    const jg = ctx.createGain();
-    jg.gain.value = o.rasp;
-    breath.connect(j).connect(jg).connect(mouth);
-  }
-
-  syls.forEach((s, i) => {
-    const a = t0 + s.at;
-    const next = syls[i + 1];
-    // El tono no se encima con el de la sílaba siguiente.
-    const d = next ? Math.min(s.dur, next.at - s.at) : s.dur;
-    const f2 = s.f * Math.pow((s.f2 ?? s.f) / s.f, d / s.dur);
-    srcs.forEach((x) => {
-      x.frequency.setValueAtTime(s.f, a);
-      x.frequency.exponentialRampToValueAtTime(f2, a + d);
-    });
-    VOWELS[s.v].forEach(([f, q, g], n) => {
-      bank[n].bp.frequency.setTargetAtTime(f * shift, a, 0.018);
-      bank[n].bp.Q.setTargetAtTime(q, a, 0.018);
-      bank[n].amp.gain.setTargetAtTime(g, a, 0.018);
-    });
-    const vol = s.vol ?? 1;
-    const h = s.h ?? 0;
-    const tied = i > 0 && syls[i - 1].tie;
-    if (h > 0) breath.gain.setTargetAtTime(0.85 * vol, a, 0.006);
-    breath.gain.setTargetAtTime((s.breath ?? 0.06) * vol, a + h, 0.02);
-    voiced.gain.setTargetAtTime(vol, a + h * 0.6, tied ? 0.03 : 0.012);
-    if (!s.tie) {
-      const off = a + s.dur * 0.7;
-      voiced.gain.setTargetAtTime(0, off, s.dur * 0.1);
-      breath.gain.setTargetAtTime(0, off, s.dur * 0.08);
-    }
-  });
-
-  output(k, mouth, o.wet ?? 0.15, o.pan);
-  srcs.forEach((s) => {
-    s.start(t0);
-    s.stop(end);
-  });
-  air.start(t0, Math.random());
-  air.stop(end);
-  return length + (o.at ?? 0);
+/** Convierte una partitura en sonido y la toca. Devuelve cuánto dura. */
+function voice(k: Kit, take: Take, o: { at?: number; wet?: number; pan?: number; vol?: number } = {}) {
+  const sr = Math.min(k.ctx.sampleRate, 24000);
+  const data = render(take, sr);
+  const buf = k.ctx.createBuffer(1, data.length, sr);
+  buf.getChannelData(0).set(data);
+  const src = k.ctx.createBufferSource();
+  src.buffer = buf;
+  const g = k.ctx.createGain();
+  g.gain.value = o.vol ?? 1;
+  src.connect(g);
+  output(k, g, o.wet ?? 0.12, o.pan);
+  src.start(k.ctx.currentTime + 0.01 + (o.at ?? 0));
+  return data.length / sr + (o.at ?? 0);
 }
 
 interface ToneOpts {
@@ -210,6 +70,7 @@ function tone(k: Kit, { type = 'sine', f, f2, at = 0, dur, vol, attack = 0.005, 
   output(k, g, wet, pan);
   o.start(t);
   o.stop(t + dur + 0.05);
+  return o;
 }
 
 interface HissOpts {
@@ -278,100 +139,103 @@ function clicks(k: Kit, hits: { at: number; vol: number; dur: number; burst?: bo
   }
 }
 
-// ---------------------------------------------------------------- 😂 Risas
-
-/** Carcajada: "¡ja ja ja ja jaaa!" y una aspiración al final. */
-function guffaw(k: Kit) {
-  const base = rnd(250, 310);
-  const n = 5 + Math.floor(Math.random() * 3);
-  const syls: Syl[] = [];
-  let t = 0;
-  for (let i = 0; i < n; i++) {
-    const last = i === n - 1;
-    const per = 0.155 + i * 0.008 + rnd(-0.01, 0.01);
-    const f = base * (1.14 - i * 0.04) * (i === 0 ? 1.08 : 1);
-    syls.push({ v: 'a', at: t, dur: last ? 0.3 : per * 0.94, f, f2: f * (last ? 0.76 : 0.86), h: 0.045, vol: 1 - i * 0.05, breath: 0.1 });
-    if (!last) t += per;
+/** Metal de banda (trombón, acorde de suspenso): diente de sierra con un filtro que se abre. */
+function brass(k: Kit, at: number, freqs: number[], dur: number, vol: number, wah: [number, number, number] = [300, 2200, 900], vib = 0) {
+  const { ctx } = k;
+  const t = ctx.currentTime + 0.01 + at;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.Q.value = 3;
+  lp.frequency.setValueAtTime(wah[0], t);
+  lp.frequency.exponentialRampToValueAtTime(wah[1], t + Math.min(0.12, dur * 0.4));
+  lp.frequency.exponentialRampToValueAtTime(wah[2], t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.03);
+  g.gain.setValueAtTime(vol * 0.85, t + dur - 0.06);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  lp.connect(g);
+  output(k, g, 0.35);
+  // Vibrato que entra poco a poco (la nota larga del trombón "llora").
+  let depth: GainNode | undefined;
+  if (vib) {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5.5;
+    depth = ctx.createGain();
+    depth.gain.setValueAtTime(0, t);
+    depth.gain.linearRampToValueAtTime(vib, t + dur * 0.4);
+    lfo.connect(depth);
+    lfo.start(t);
+    lfo.stop(t + dur + 0.05);
   }
-  // Se queda sin aire.
-  syls.push({ v: 'e', at: t + 0.42, dur: 0.3, f: base * 2.1, f2: base * 2.5, vol: 0.22, breath: 1.1 });
-  return speak(k, syls, { vol: 2.3, vib: [6, 14], jitter: 18, rasp: 0.35, wet: 0.16 });
+  for (const f of freqs)
+    for (const det of [-6, 6]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.detune.value = det;
+      o.frequency.setValueAtTime(f * 0.97, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.04);
+      depth?.connect(o.detune);
+      o.connect(lp);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    }
 }
 
-/** Risita: "ji ji ji ji" aguda y rápida. */
-function giggle(k: Kit) {
-  const base = rnd(420, 500);
-  const n = 6 + Math.floor(Math.random() * 3);
-  const syls: Syl[] = [];
-  for (let i = 0; i < n; i++) {
-    const last = i === n - 1;
-    const f = base * (1.06 - i * 0.022);
-    syls.push({ v: i % 3 === 2 ? 'e' : 'i', at: i * 0.115, dur: last ? 0.22 : 0.105, f, f2: f * (last ? 0.8 : 0.9), h: 0.03, vol: 1 - i * 0.04, breath: 0.12 });
+// ---------------------------------------------------------------- Voces
+
+/** 🤣 Ataque de risa con palmadas en la rodilla. */
+function rofl(k: Kit, sp: V.Speaker, r: R) {
+  const take = V.hysterical(r, sp);
+  for (const at of take.marks) {
+    hiss(k, { f: 900, q: 0.9, at, dur: 0.08, vol: 0.5, wet: 0.1 });
+    tone(k, { f: 160, f2: 90, at, dur: 0.09, vol: 0.4, wet: 0.05 });
   }
-  return speak(k, syls, { vol: 2.6, shift: 1.12, vib: [7, 22], jitter: 20, rasp: 0.2, wet: 0.14 });
+  return voice(k, take);
 }
 
-/** Risa de villano: "¡muajajajá!", grave y con eco (muy de impostor). */
-function evilLaugh(k: Kit) {
-  const b = rnd(128, 150);
-  const syls: Syl[] = [
-    { v: 'm', at: 0, dur: 0.13, f: b, f2: b * 1.08, tie: true },
-    { v: 'u', at: 0.13, dur: 0.07, f: b * 1.08, f2: b * 1.2, tie: true },
-    { v: 'a', at: 0.2, dur: 0.42, f: b * 1.35, f2: b * 1.12, breath: 0.1 },
-  ];
-  for (let i = 0; i < 5; i++) {
-    const f = b * (1.32 - i * 0.05);
-    syls.push({ v: 'a', at: 0.66 + i * 0.165, dur: 0.15, f, f2: f * 0.86, h: 0.05, vol: 0.95, breath: 0.1 });
-  }
-  syls.push({ v: 'a', at: 0.66 + 5 * 0.165, dur: 0.6, f: b * 1.45, f2: b * 0.92, h: 0.05, breath: 0.12 });
-  return speak(k, syls, { vol: 2.2, shift: 0.9, vib: [5, 22], jitter: 14, rasp: 0.4, wet: 0.5 });
+/** 🫣 Traga saliva y se le escapa un "uuuy…". */
+function peek(k: Kit, sp: V.Speaker, r: R) {
+  hiss(k, { filter: 'lowpass', f: 900, dur: 0.03, vol: 0.25, wet: 0.05 });
+  tone(k, { f: 560, f2: 190, at: 0.015, dur: 0.13, vol: 0.2, wet: 0.08 });
+  tone(k, { type: 'triangle', f: 760, f2: 300, at: 0.015, dur: 0.1, vol: 0.08, wet: 0.08 });
+  return voice(k, V.uy(r, sp), { at: 0.28 });
 }
 
-// ---------------------------------------------------------------- Las demás
-
-/** 😱 Se le va el aire y grita: "¡AAAAH!". */
-function scream(k: Kit) {
-  const f = rnd(780, 900);
-  hiss(k, { f: 1100, f2: 2400, q: 1.2, dur: 0.17, vol: 0.12, attack: 0.13, wet: 0.1 });
-  const len = speak(
-    k,
-    [
-      { v: 'a', at: 0, dur: 0.14, f: f * 0.58, f2: f, h: 0.01, breath: 0.25, tie: true },
-      { v: 'a', at: 0.14, dur: 0.5, f, f2: f * 1.06, breath: 0.25, tie: true },
-      { v: 'a', at: 0.64, dur: 0.38, f: f * 1.06, f2: f * 0.66, vol: 0.85, breath: 0.3 },
-    ],
-    { vol: 1.5, at: 0.17, shift: 1.14, vib: [7.5, 45], jitter: 30, rough: 22, rasp: 0.25, wet: 0.3 },
-  );
-  return len;
-}
-
-/** 🤔 "Mmmmm…" pensando. */
-function think(k: Kit) {
-  const f = rnd(200, 225);
-  return speak(
-    k,
-    [
-      { v: 'm', at: 0, dur: 0.36, f, f2: f * 0.93, tie: true, breath: 0.02 },
-      { v: 'm', at: 0.36, dur: 0.32, f: f * 0.93, f2: f * 1.12, tie: true, breath: 0.02 },
-      { v: 'm', at: 0.68, dur: 0.48, f: f * 1.12, f2: f * 0.95, vol: 0.9, breath: 0.02 },
-    ],
-    { vol: 2.4, vib: [5, 12], jitter: 10, wet: 0.15 },
-  );
-}
-
-/** 🤨 Chasquido de lengua y un "¿eeeh?" que sube. */
-function doubt(k: Kit) {
+/** 🤨 Chasquido de lengua y "¿eeeh?". */
+function doubt(k: Kit, sp: V.Speaker, r: R) {
   hiss(k, { filter: 'highpass', f: 3200, dur: 0.014, vol: 0.4, wet: 0.08 });
-  const f = rnd(175, 200);
-  return speak(
-    k,
-    [
-      { v: 'e', at: 0, dur: 0.16, f, f2: f * 0.96, h: 0.03, tie: true },
-      { v: 'e', at: 0.16, dur: 0.44, f: f * 0.96, f2: f * 1.75, vol: 1 },
-    ],
-    { vol: 2.2, at: 0.15, vib: [5.5, 14], jitter: 12, wet: 0.16 },
-  );
+  return voice(k, V.doubt(r, sp), { at: 0.14 });
 }
+
+/** 🫵 "¡TÚ!" y acorde de suspenso: dun… dun… ¡duuun! */
+function accuse(k: Kit, sp: V.Speaker, r: R) {
+  voice(k, V.tu(r, sp), { wet: 0.2 });
+  const s = 0.62;
+  brass(k, s, [98, 146.8], 0.17, 0.09);
+  brass(k, s + 0.26, [98, 146.8], 0.17, 0.09);
+  brass(k, s + 0.55, [92.5, 138.6, 110], 1.3, 0.1, [300, 2600, 700], 18);
+  hiss(k, { filter: 'lowpass', f: 500, at: s + 0.55, dur: 1.2, vol: 0.18, attack: 0.05, wet: 0.3 });
+  tone(k, { f: 73.4, at: s + 0.55, dur: 1.2, vol: 0.25, attack: 0.02, wet: 0.2 });
+  return s + 1.9;
+}
+
+/** 😴 Ronquido y silbido al soltar el aire. */
+function snore(k: Kit, _sp: V.Speaker, r: R) {
+  voice(k, V.snore(r));
+  const w = tone(k, { f: 1500, f2: 900, at: 1.2, dur: 0.55, vol: 0.08, attack: 0.08, wet: 0.2 });
+  // El silbido tiembla un poco.
+  const lfo = k.ctx.createOscillator();
+  lfo.frequency.value = 7;
+  const d = k.ctx.createGain();
+  d.gain.value = 25;
+  lfo.connect(d).connect(w.detune);
+  lfo.start(k.ctx.currentTime + 1.2);
+  lfo.stop(k.ctx.currentTime + 1.8);
+  return 1.85;
+}
+
+// ---------------------------------------------------------------- Efectos
 
 /** 🔪 Navaja que sale de la funda: "shhhiiing". */
 function knife(k: Kit) {
@@ -397,22 +261,6 @@ function eyes(k: Kit) {
     hiss(k, { f: 3000, f2: 5000, q: 2, at, dur: 0.07, vol: 0.08, pan, wet: 0.1 });
   });
   return 0.4;
-}
-
-/** 🫣 Traga saliva y se le escapa un "uuuy…". */
-function peek(k: Kit) {
-  hiss(k, { filter: 'lowpass', f: 900, dur: 0.03, vol: 0.25, wet: 0.05 });
-  tone(k, { f: 560, f2: 190, at: 0.015, dur: 0.13, vol: 0.2, wet: 0.08 });
-  tone(k, { type: 'triangle', f: 760, f2: 300, at: 0.015, dur: 0.1, vol: 0.08, wet: 0.08 });
-  const f = rnd(320, 350);
-  return speak(
-    k,
-    [
-      { v: 'u', at: 0, dur: 0.42, f, f2: f * 0.92, breath: 0.2, tie: true },
-      { v: 'i', at: 0.42, dur: 0.2, f: f * 0.92, f2: f * 0.82, breath: 0.25 },
-    ],
-    { vol: 2.6, at: 0.3, shift: 1.05, vib: [8.5, 55], jitter: 16, wet: 0.18 },
-  );
 }
 
 /** 🤡 Bocina de payaso: ¡mok, mok! */
@@ -485,36 +333,145 @@ function clap(k: Kit) {
   return len;
 }
 
+/** 🎺 Trombón triste: "wa, wa, wa, waaaaa". */
+function trombone(k: Kit) {
+  const notes: [number, number, number][] = [
+    [0, 233.1, 0.3],
+    [0.36, 220, 0.3],
+    [0.72, 207.7, 0.3],
+    [1.08, 196, 1.15],
+  ];
+  notes.forEach(([at, f, dur], i) => brass(k, at, [f], dur, 0.16, i < 3 ? [350, 1700, 500] : [350, 1900, 380], i === 3 ? 35 : 0));
+  return 2.3;
+}
+
+/** 🥁 Chiste malo: ba-dum… ¡tss! */
+function rimshot(k: Kit) {
+  // Tarola.
+  tone(k, { type: 'triangle', f: 210, f2: 160, dur: 0.1, vol: 0.35, wet: 0.15 });
+  hiss(k, { f: 2000, q: 0.8, dur: 0.16, vol: 0.4, wet: 0.2 });
+  // Tom.
+  tone(k, { f: 150, f2: 95, at: 0.17, dur: 0.32, vol: 0.55, wet: 0.15 });
+  tone(k, { type: 'triangle', f: 300, f2: 190, at: 0.17, dur: 0.12, vol: 0.12, wet: 0.15 });
+  hiss(k, { filter: 'lowpass', f: 1200, at: 0.17, dur: 0.08, vol: 0.15, wet: 0.1 });
+  // Platillo.
+  hiss(k, { filter: 'highpass', f: 6500, at: 0.4, dur: 1.3, vol: 0.32, wet: 0.35 });
+  hiss(k, { f: 9500, q: 0.7, at: 0.4, dur: 1.0, vol: 0.14, wet: 0.35 });
+  [3150, 4225, 5340, 6890].forEach((f) => tone(k, { type: 'square', f, at: 0.4, dur: 0.9, vol: 0.012, wet: 0.4 }));
+  return 1.75;
+}
+
+/** 💀 "Me muero": silbato que cae, ¡pum! y pajaritos. */
+function dead(k: Kit) {
+  const w = tone(k, { f: 1700, f2: 260, dur: 0.75, vol: 0.18, attack: 0.03, wet: 0.2 });
+  tone(k, { type: 'triangle', f: 3400, f2: 520, dur: 0.72, vol: 0.03, attack: 0.03, wet: 0.2 });
+  const lfo = k.ctx.createOscillator();
+  lfo.frequency.value = 9;
+  const d = k.ctx.createGain();
+  d.gain.value = 35;
+  lfo.connect(d).connect(w.detune);
+  lfo.start(k.ctx.currentTime);
+  lfo.stop(k.ctx.currentTime + 0.85);
+  // Golpe.
+  tone(k, { f: 220, f2: 65, at: 0.8, dur: 0.35, vol: 0.6, wet: 0.15 });
+  tone(k, { type: 'triangle', f: 520, f2: 400, at: 0.8, dur: 0.08, vol: 0.2, wet: 0.15 });
+  hiss(k, { filter: 'lowpass', f: 1400, at: 0.8, dur: 0.12, vol: 0.35, wet: 0.15 });
+  // Pajaritos dando vueltas.
+  [0, 0.14, 0.28, 0.42].forEach((at, i) =>
+    tone(k, { f: i % 2 ? 2900 : 3500, f2: i % 2 ? 3300 : 3000, at: 1.0 + at, dur: 0.1, vol: 0.05, pan: i % 2 ? 0.6 : -0.6, wet: 0.4 }),
+  );
+  return 1.65;
+}
+
+/** 🤫 "¡Shhhh!". */
+function shush(k: Kit) {
+  hiss(k, { f: 3000, f2: 2700, q: 1.6, dur: 0.95, vol: 0.4, attack: 0.12, wet: 0.15 });
+  hiss(k, { f: 5200, q: 2, dur: 0.9, vol: 0.12, attack: 0.15, wet: 0.15 });
+  hiss(k, { f: 1900, q: 3, dur: 0.85, vol: 0.08, attack: 0.15, wet: 0.1 });
+  return 1;
+}
+
+/** 🍿 Palomitas: pop, pop, pop… y a masticar. */
+function popcorn(k: Kit) {
+  let t = 0.02;
+  let gap = 0.22;
+  for (let i = 0; i < 11; i++) {
+    const f = rnd(420, 760);
+    const pan = rnd(-0.7, 0.7);
+    tone(k, { f, f2: f * 0.55, at: t, dur: 0.045, vol: rnd(0.2, 0.35), pan, wet: 0.12 });
+    hiss(k, { filter: 'highpass', f: 2500, at: t, dur: 0.012, vol: 0.25, pan, wet: 0.08 });
+    t += gap * rnd(0.6, 1.2);
+    gap = Math.max(0.05, gap * 0.8);
+  }
+  // Ñam, ñam.
+  for (let i = 0; i < 3; i++) {
+    const at = t + 0.12 + i * 0.2;
+    clicks(
+      k,
+      Array.from({ length: 9 }, () => ({ at: at + rnd(0, 0.09), vol: rnd(0.15, 0.35), dur: rnd(0.006, 0.02) })),
+      rnd(1500, 2500),
+      0.8,
+      0,
+      0.05,
+    );
+  }
+  return t + 0.8;
+}
+
 /** Cada sonido con su volumen (igualados para que se oigan parejo en la bocina de un celular). */
 export const REACTION_VOICES = {
-  guffaw: [guffaw, 0.6],
-  giggle: [giggle, 0.45],
-  evilLaugh: [evilLaugh, 0.6],
-  scream: [scream, 0.3],
-  think: [think, 0.6],
-  doubt: [doubt, 0.45],
-  knife: [knife, 2.8],
-  eyes: [eyes, 4.5],
-  peek: [peek, 0.6],
-  honk: [honk, 2.6],
-  fire: [fire, 2.6],
-  clap: [clap, 3.2],
-} satisfies Record<string, [(k: Kit) => number, number]>;
+  // Risas (😂 elige una al azar). [sonido, volumen, corte de graves en Hz]
+  guffaw: [(k, sp, r) => voice(k, V.guffaw(r, sp)), 0.5, 170],
+  giggle: [(k, sp, r) => voice(k, V.giggle(r, sp)), 0.5, 300],
+  evil: [(k, _sp, r) => voice(k, V.evilLaugh(r), { wet: 0.45 }), 0.6, 170],
+  piggy: [(k, sp, r) => voice(k, V.snortLaugh(r, sp)), 0.7, 260],
+  rofl: [rofl, 0.6, 170],
+  scream: [(k, sp, r) => voice(k, V.scream(r, sp), { wet: 0.25 }), 0.32],
+  think: [(k, sp, r) => voice(k, V.think(r, sp)), 0.55, 380],
+  doubt: [doubt, 0.33],
+  eyes: [eyes, 4.4],
+  peek: [peek, 0.27, 300],
+  accuse: [accuse, 0.6, 200],
+  knife: [knife, 2.65],
+  chicken: [(k, _sp, r) => voice(k, V.chicken(r), { wet: 0.12 }), 0.53],
+  raspberry: [(k, _sp, r) => voice(k, V.raspberry(r), { wet: 0.08 }), 0.55],
+  honk: [honk, 1.9],
+  cry: [(k, sp, r) => voice(k, V.cry(r, sp), { wet: 0.22 }), 0.35],
+  dead: [dead, 1.5, 200],
+  snore: [snore, 1.6, 350],
+  shush: [shush, 2.5],
+  popcorn: [popcorn, 3.2],
+  rimshot: [rimshot, 1.15],
+  trombone: [trombone, 1.25],
+  fire: [fire, 2.8],
+  clap: [clap, 3.1],
+} satisfies Record<string, [play: (k: Kit, sp: V.Speaker, r: R) => number, level: number, lowCut?: number]>;
 export type ReactionVoice = keyof typeof REACTION_VOICES;
 
-const BY_EMOJI: Record<string, ReactionVoice | (() => ReactionVoice)> = {
-  // Cada quien se ríe distinto: carcajada, risita o, de vez en cuando, risa de villano.
-  '😂': () => {
-    const r = Math.random();
-    return r < 0.15 ? 'evilLaugh' : r < 0.5 ? 'giggle' : 'guffaw';
+const BY_EMOJI: Record<string, ReactionVoice | ((r: R) => ReactionVoice)> = {
+  // Cada vez una risa distinta: carcajada, risita, de cerdito o, de vez en cuando, de villano.
+  '😂': (r) => {
+    const x = r();
+    return x < 0.12 ? 'evil' : x < 0.27 ? 'piggy' : x < 0.55 ? 'giggle' : 'guffaw';
   },
+  '🤣': 'rofl',
   '😱': 'scream',
   '🤔': 'think',
   '🤨': 'doubt',
-  '🔪': 'knife',
   '👀': 'eyes',
   '🫣': 'peek',
+  '🫵': 'accuse',
+  '🔪': 'knife',
+  '🐔': 'chicken',
+  '😝': 'raspberry',
   '🤡': 'honk',
+  '😭': 'cry',
+  '💀': 'dead',
+  '😴': 'snore',
+  '🤫': 'shush',
+  '🍿': 'popcorn',
+  '🥁': 'rimshot',
+  '🎺': 'trombone',
   '🔥': 'fire',
   '👏': 'clap',
 };
@@ -523,19 +480,19 @@ const BY_EMOJI: Record<string, ReactionVoice | (() => ReactionVoice)> = {
 export const hasReactionSound = (e: string) => e in BY_EMOJI;
 
 /** Toca un sonido por su nombre, con su volumen y sin graves que la bocina no puede dar. */
-export function playVoice(k: Kit, name: ReactionVoice) {
-  const [play, level] = REACTION_VOICES[name];
+export function playVoice(k: Kit, name: ReactionVoice, sp: V.Speaker = V.speaker(Math.random), r: R = Math.random) {
+  const [play, level, lowCut] = REACTION_VOICES[name] as [(k: Kit, sp: V.Speaker, r: R) => number, number, number?];
   const { ctx } = k;
   const hp = ctx.createBiquadFilter();
   hp.type = 'highpass';
-  hp.frequency.value = 130;
+  hp.frequency.value = lowCut ?? 130;
   const bus = ctx.createGain();
   bus.gain.value = level;
   bus.connect(hp).connect(k.master);
   const verb = ctx.createGain();
   verb.gain.value = level;
   verb.connect(k.verb);
-  const dur = play({ ...k, master: bus, verb });
+  const dur = play({ ...k, master: bus, verb }, sp, r);
   window.setTimeout(() => {
     bus.disconnect();
     verb.disconnect();
@@ -544,23 +501,39 @@ export function playVoice(k: Kit, name: ReactionVoice) {
   return dur;
 }
 
-let busy: number[] = [];
+/** Calienta la caja de voz cuando la app está quieta, para que la primera risa no tarde más. */
+if (typeof window !== 'undefined')
+  window.setTimeout(() => {
+    const warm = () => render(V.guffaw(Math.random, V.speaker(Math.random)), 16000);
+    if ('requestIdleCallback' in window) window.requestIdleCallback(warm);
+    else warm();
+  }, 4000);
+
+let busy: { until: number }[] = [];
 const last = new Map<string, number>();
 
 /**
- * Toca el sonido de una reacción. En la sala pueden llegar muchas juntas: se tocan hasta 3 a
+ * Toca el sonido de una reacción. `who` es quien la mandó: cada jugador tiene su propia voz y
+ * suena igual en todos los teléfonos. En la sala pueden llegar muchas juntas: se tocan hasta 3 a
  * la vez y la misma no se repite antes de un cuarto de segundo. `preview` se salta el límite.
  */
-export function reactionSound(e: string, preview = false): boolean {
+export function reactionSound(e: string, who?: string, preview = false): boolean {
   const k = sfx.kit();
-  const voice = BY_EMOJI[e];
-  if (!k || !voice) return false;
+  const name = BY_EMOJI[e];
+  if (!k || !name) return false;
   const now = k.ctx.currentTime;
-  busy = busy.filter((t) => t > now);
+  busy = busy.filter((b) => b.until > now);
   if (!preview && (busy.length >= 3 || now - (last.get(e) ?? -9) < 0.25)) return false;
-  const dur = playVoice(k, typeof voice === 'function' ? voice() : voice);
   last.set(e, now);
-  busy.push(now + dur);
+  const slot = { until: now + 2 };
+  busy.push(slot);
+  const voiceName = typeof name === 'function' ? name(Math.random) : name;
+  const sp = who ? V.speakerFor(who) : V.speaker(Math.random);
+  // Las voces se calculan en el teléfono: primero se dibuja la burbuja y luego se arma el sonido.
+  requestAnimationFrame(() =>
+    setTimeout(() => {
+      slot.until = k.ctx.currentTime + playVoice(k, voiceName, sp);
+    }, 0),
+  );
   return true;
 }
-
