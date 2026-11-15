@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Emo } from './Emo';
 import type { CSSProperties } from 'react';
 import { ACCENT_BY_ID, MX_ADULT_RULE } from '../engine/events';
 import type { ShownEvent } from '../store/view';
@@ -32,11 +33,12 @@ export function EventCard({
         {label ?? (event.id ? '⚡ Evento de ronda ⚡' : '🤫 Algo cambió 🤫')}
       </div>
       <motion.div
-        animate={still ? undefined : { rotate: [0, -10, 10, 0], scale: [1, 1.15, 1] }}
-        transition={{ repeat: Infinity, duration: 1.6 }}
+        initial={still ? false : { scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 12, delay: 0.15 }}
         style={{ fontSize: 72, lineHeight: 1, position: 'relative' }}
       >
-        {event.emoji}
+        <Emo e={event.emoji} />
       </motion.div>
       <div className="h2" style={{ fontSize: 'clamp(34px, 11vw, 44px)', position: 'relative' }}>
         <Glitch text={event.title} hard={!still} />
@@ -50,7 +52,7 @@ export function EventCard({
       {acc && (
         <div className="event-extra">
           <div className="display" style={{ fontSize: 30 }}>
-            {acc.emoji} {acc.name}
+            <Emo e={acc.emoji} anim="hop" /> {acc.name}
           </div>
           <div style={{ fontSize: 14, lineHeight: 1.4 }}>{acc.how}</div>
           {adult && <div className="spicy">🌶️ {MX_ADULT_RULE}</div>}

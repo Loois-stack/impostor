@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Emo } from '../components/Emo';
 import { useEffect, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
@@ -101,9 +102,15 @@ export function Home() {
           Todos tienen la misma carta… menos uno. Tiene algo <b style={{ color: '#fff' }}>parecido</b>. ¿Lo descubrirán?
         </motion.p>
         <motion.div {...stagger(4)} className="row dim" style={{ fontSize: 12, fontWeight: 700, gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-          <span>🃏 {ITEMS.length} cartas</span>
-          <span>🗂️ {CATEGORIES.length} categorías</span>
-          <span>⚡ {EVENT_LIST.length + CHALLENGES.filter((c) => !c.adult).length} eventos</span>
+          <span>
+            <Emo e="🃏" /> {ITEMS.length} cartas
+          </span>
+          <span>
+            <Emo e="🗂️" anim="bob" /> {CATEGORIES.length} categorías
+          </span>
+          <span>
+            <Emo e="⚡" /> {EVENT_LIST.length + CHALLENGES.filter((c) => !c.adult).length} eventos
+          </span>
         </motion.div>
       </div>
 
@@ -137,7 +144,7 @@ export function Home() {
               go('online');
             }}
           >
-            📡 Varios teléfonos
+            <Emo e="📡" anim="wiggle" /> Varios teléfonos
           </Button>
         </motion.div>
       </div>

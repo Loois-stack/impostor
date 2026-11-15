@@ -33,3 +33,27 @@ export function turnOrder(players: string[], impostors: string[], lastStarter: s
   const i = players.indexOf(starter);
   return [...players.slice(i), ...players.slice(0, i)];
 }
+
+/**
+ * Cuántos impostores caben. Siempre debe haber MÁS civiles que impostores al empezar:
+ * si igualan, los impostores ya ganaron.
+ */
+export const maxImpostors = (players: number) => Math.max(1, Math.floor((players - 1) / 2));
+
+/** Cantidad recomendada: más o menos uno por cada 3 o 4 jugadores. */
+export function recommendedImpostors(players: number) {
+  const k = players <= 5 ? 1 : players <= 8 ? 2 : players <= 11 ? 3 : players <= 15 ? 4 : 5;
+  return Math.min(k, maxImpostors(players));
+}
+
+/** 0 = automático (lo recomendado); cualquier otro número se ajusta al máximo posible. */
+export const resolveImpostors = (setting: number, players: number) =>
+  setting > 0 ? Math.min(setting, maxImpostors(players)) : recommendedImpostors(players);
+
+export type Balance = 'easy' | 'fair' | 'hard' | 'brutal';
+
+/** Qué tan pareja queda la partida con esa cantidad de impostores. */
+export function balanceOf(impostors: number, players: number): Balance {
+  const d = impostors - recommendedImpostors(players);
+  return d < 0 ? 'easy' : d === 0 ? 'fair' : d === 1 ? 'hard' : 'brutal';
+}

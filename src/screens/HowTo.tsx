@@ -1,10 +1,12 @@
 import { motion } from 'framer-motion';
+import { Emo } from '../components/Emo';
 import { TopBar, stagger } from '../components/ui';
 import { useGame } from '../store/game';
 
 const STEPS = [
   ['🃏', 'Reparto', 'Con un teléfono: pásenlo y cada quien mantiene presionada su carta en secreto. Con varios teléfonos: cada quien la ve en el suyo.'],
   ['🔪', 'El impostor', 'Todos tienen la MISMA carta… menos el impostor, que tiene algo PARECIDO pero distinto (o nada, en modo clásico). A veces casi idéntico y puede camuflarse; a veces tendrá que jugársela.'],
+  ['👥', 'Varios impostores', 'Con más jugadores puede haber más impostores (en automático: 1 hasta 5 jugadores, 2 hasta 8, 3 hasta 11…). Cada uno tiene una carta distinta y no sabe quiénes son los otros, salvo que activen el modo equipo: ahí se conocen, comparten carta y ganan juntos.'],
   ['🗣️', 'Pistas', 'Por turnos, cada jugador dice una palabra o frase sobre su carta. Muy obvia = el impostor la descubre. Muy vaga = sospechan de ti.'],
   ['⚡', 'Eventos especiales', 'Al que le toca turno puede caerle un evento: voz ridícula, acento mexicano, mímica, restricciones… La app avisa a quién le tocó y se quita cuando pasa el turno. Si lo cumple, +50.'],
   ['🤫', 'Misiones secretas', 'A veces tu carta trae una misión que solo tú conoces: defender al sospechoso, hacerte el culpable… Nadie sabe quién tiene una hasta el final. Vale +100.'],
@@ -23,7 +25,9 @@ export function HowTo() {
         <div className="stack" style={{ gap: 10 }}>
           {STEPS.map(([e, t, d], i) => (
             <motion.div key={t} {...stagger(i, 0.07)} className="panel row" style={{ alignItems: 'flex-start', gap: 14 }}>
-              <div style={{ fontSize: 32, lineHeight: 1 }}>{e}</div>
+              <div style={{ fontSize: 32, lineHeight: 1 }}>
+                <Emo e={e} delay={-i * 0.3} />
+              </div>
               <div>
                 <div className="display" style={{ fontSize: 26 }}>
                   {i + 1}. {t}

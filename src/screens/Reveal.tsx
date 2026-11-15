@@ -1,4 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { emojiRain } from '../fx/scene';
+import { Emo } from '../components/Emo';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { MiniCard } from '../components/MiniCard';
@@ -84,7 +86,7 @@ export function Reveal() {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
   const { setStep, guess, nextGuess, setChallengeResult, setMissionResult, finishRound, continueRound } = useGame();
-  const { online, me, host } = useSeat();
+  const { online, me, host, seats } = useSeat();
   // El suspenso es una animación local; el resto de pasos los marca el store (y así van a la par en sala).
   const [suspense, setSuspense] = useState(round.step === 'verdict');
   const phase = round.step === 'verdict' && suspense ? 'suspense' : round.step;
@@ -92,6 +94,13 @@ export function Reveal() {
   const P = (id: string) => players.find((p) => p.id === id)!;
   const civil = BY_ID[round.civil];
   const decoy = round.decoy ? BY_ID[round.decoy] : null;
+  // Cartas distintas que tuvieron los impostores y quién tuvo cada una.
+  const decoyIds = [...new Set(Object.values(round.decoys ?? {}))];
+  const decoyCards = (decoyIds.length ? decoyIds : round.decoy ? [round.decoy] : []).map((id) => ({
+    item: BY_ID[id],
+    who: round.impostors.filter((imp) => (round.decoys?.[imp] ?? round.decoy) === id),
+  }));
+  const avatarSize = round.impostors.length <= 2 ? 76 : round.impostors.length <= 4 ? 58 : 44;
   const caught = round.impostors.filter((i) => round.accused.includes(i));
   const escaped = round.impostors.filter((i) => !round.accused.includes(i));
   const lastVote = round.lastVote ?? round.accused;
@@ -109,10 +118,10 @@ export function Reveal() {
     const c = decoyCandidates(civil);
     const themed = round.theme ? THEME_BY_ID[round.theme].items.map((id) => BY_ID[id]).filter((i) => i && i.id !== civil.id) : [];
     const pool = [...rng.shuffle(themed), ...rng.shuffle(c[1]), ...rng.shuffle(c[2]), ...rng.shuffle(c[3])].filter(
-      (i, idx, arr) => i.id !== round.decoy && arr.findIndex((x) => x.id === i.id) === idx,
+      (i, idx, arr) => i.id !== round.decoy && !Object.values(round.decoys ?? {}).includes(i.id) && arr.findIndex((x) => x.id === i.id) === idx,
     );
     return rng.shuffle([civil, ...pool.slice(0, 5)]);
-  }, [round.n, round.civil, round.decoy, round.theme, civil]);
+  }, [round.n, round.civil, round.decoy, round.decoys, round.theme, civil]);
 
   // Suspenso -> veredicto (una vez por votación).
   useEffect(() => {
@@ -126,15 +135,18 @@ export function Reveal() {
       if (round.nobodyVote) {
         if (correctNobody) {
           sfx.fanfare();
+          emojiRain(['🧠', '🎉', '✨']);
           burst({ kind: 'confetti', colors: ['#39ff88', '#2ee6ff', '#fff', '#ffd23d'], count: 140 });
           flash('#39ff88', 500, 0.4);
         } else {
           sfx.impostor();
           flash('#ff2e4d', 600, 0.7);
           shake(20, 700);
+          emojiRain(['😈', '🔪', '🫥']);
         }
       } else if (lastCaught.length) {
         sfx.impostor();
+        emojiRain(['🎯', '🕵️', '🎉', '🔪'], 30);
         haptic([100, 50, 200]);
         flash('#ff2e4d', 600, 0.75);
         shake(22, 700);
@@ -142,6 +154,7 @@ export function Reveal() {
       } else {
         sfx.stamp();
         setTimeout(() => sfx.fail(), 200);
+        emojiRain(tie ? ['⚖️', '🤷', '❓'] : ['💀', '😬', '🫠'], 18);
         flash(tie ? '#ffd23d' : '#2ee6ff', 500, 0.4);
         shake(10, 400);
       }
@@ -163,6 +176,7 @@ export function Reveal() {
         flash(escaped.length ? '#ff2e4d' : '#7c5cff', 500, 0.6);
         shake(16, 500);
         burst({ kind: 'shards', colors: ['#ff2e4d', '#fff'], count: 50 });
+        emojiRain(escaped.length ? ['😈', '🔪', '🩸'] : ['🫥', '😏'], 24);
       }, 800);
       return () => clearTimeout(t);
     }
@@ -175,6 +189,7 @@ export function Reveal() {
     if (!round.guessPick) return;
     if (round.guessPick === round.civil) {
       sfx.fanfare();
+      emojiRain(['🧠', '🎯', '😈']);
       burst({ kind: 'confetti', colors: ['#ff2e4d', '#ffd23d', '#fff'], count: 120 });
       haptic([40, 40, 40, 40, 120]);
     } else {
@@ -192,7 +207,8 @@ export function Reveal() {
 
   const guesser = caught[round.guessIdx];
   const picked = round.guessPick;
-  const canGuess = !picked && (!online || me === guesser);
+  const mineGuess = !online || seats.includes(guesser);
+  const canGuess = !picked && mineGuess;
   const allJudged = judgments.every((j) => (j.mission ? round.missionResults[j.player] : round.challengeResults[j.player]) !== undefined);
 
   const control = (node: ReactNode, waiting?: string) => (host ? node : <Waiting text={waiting} />);
@@ -212,11 +228,13 @@ export function Reveal() {
                 <div className="label">{round.nobodyVote ? 'Votaron que…' : 'Acusaron a…'}</div>
                 <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ repeat: Infinity, duration: 0.7 }} className="row" style={{ gap: 18 }}>
                   {round.nobodyVote ? (
-                    <div style={{ fontSize: 110 }}>🫥</div>
+                    <div style={{ fontSize: 110 }}>
+                      <Emo e="🫥" />
+                    </div>
                   ) : (
                     lastVote.map((id) => (
                       <div key={id} className="center" style={{ gap: 10 }}>
-                        <Avatar player={P(id)} size={120} />
+                        <Avatar player={P(id)} size={120} mood="scared" />
                         <b className="display" style={{ fontSize: 40 }}>
                           {P(id).name}
                         </b>
@@ -237,7 +255,9 @@ export function Reveal() {
           <motion.div key={`v${round.voteN}`} className="grow center content" style={{ gap: 22 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, y: -60 }}>
             {round.nobodyVote ? (
               <>
-                <div style={{ fontSize: 100 }}>{correctNobody ? '🎉' : '😈'}</div>
+                <div style={{ fontSize: 100 }}>
+                  <Emo e={correctNobody ? '🎉' : '😈'} />
+                </div>
                 <Stamp tone={correctNobody ? 'good' : 'bad'} text={correctNobody ? '¡CORRECTO!' : '¡ERROR!'} />
                 <div style={{ fontSize: 18, fontWeight: 700, maxWidth: 320 }}>
                   {correctNobody ? 'No había impostor. ¡Nadie los engañó!' : 'Sí había impostor… y se salió con la suya.'}
@@ -245,7 +265,9 @@ export function Reveal() {
               </>
             ) : tie ? (
               <>
-                <div style={{ fontSize: 100 }}>⚖️</div>
+                <div style={{ fontSize: 100 }}>
+                  <Emo e="⚖️" anim="swing" />
+                </div>
                 <Stamp tone="neutral" text="¡EMPATE!" />
                 <div style={{ fontSize: 18, fontWeight: 700, maxWidth: 320 }}>
                   {status.over ? 'No se pusieron de acuerdo… y eso le conviene a alguien.' : 'Nadie sale esta vez. Sigan discutiendo.'}
@@ -261,10 +283,16 @@ export function Reveal() {
             {!status.over && !tie && (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1 }} className="panel center" style={{ gap: 6, maxWidth: 360 }}>
                 <div style={{ fontSize: 17, fontWeight: 800 }}>
-                  {lastCaught.length ? '¡Atraparon a uno! Pero todavía queda otro impostor…' : `💀 ${lastVote.map((id) => P(id).name).join(' y ')} queda fuera del juego`}
+                  {lastCaught.length
+                    ? `¡Atraparon ${lastCaught.length > 1 ? `a ${lastCaught.length}` : 'a uno'}! Pero ${status.aliveImps === 1 ? 'todavía queda un impostor' : `todavía quedan ${status.aliveImps} impostores`}…`
+                    : `💀 ${lastVote.map((id) => P(id).name).join(' y ')} queda fuera del juego`}
                 </div>
                 <div className="dim" style={{ fontSize: 13.5 }}>
-                  Quedan {status.alive.length} jugadores. El impostor sigue entre ustedes…
+                  Quedan {status.alive.length} jugadores. {round.declared > 1 && !round.hidden
+                    ? status.aliveImps === 1
+                      ? 'Falta 1 impostor por atrapar…'
+                      : `Faltan ${status.aliveImps} impostores por atrapar…`
+                    : 'El impostor sigue entre ustedes…'}
                 </div>
               </motion.div>
             )}
@@ -288,7 +316,8 @@ export function Reveal() {
         )}
 
         {phase === 'truth' && (
-          <motion.div key="t" className="grow stack content" style={{ gap: 12, justifyContent: 'center', minHeight: 0 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div key="t" className="grow stack content" style={{ gap: 12, minHeight: 0 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="scroll stack" style={{ gap: 12, justifyContent: 'safe center' }}>
             {round.impostors.length === 0 ? (
               <div className="center" style={{ gap: 6 }}>
                 <div className="h1">
@@ -299,7 +328,7 @@ export function Reveal() {
             ) : (
               <div className="center" style={{ gap: 10 }}>
                 <div className="label">{round.impostors.length > 1 ? 'Los impostores eran' : 'El impostor era'}</div>
-                <div className="row" style={{ gap: 16, justifyContent: 'center' }}>
+                <div className="row" style={{ gap: avatarSize > 50 ? 16 : 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                   {round.impostors.map((id, i) => (
                     <motion.div
                       key={id}
@@ -309,15 +338,18 @@ export function Reveal() {
                       className="center"
                       style={{ gap: 6 }}
                     >
-                      <Avatar player={P(id)} size={76} style={{ boxShadow: '0 0 0 4px #ff2e4d, 0 0 40px #ff2e4d' }} />
-                      <b className="display" style={{ fontSize: 30, color: '#ff5470' }}>
+                      <Avatar player={P(id)} size={avatarSize} mood={round.accused.includes(id) ? 'scared' : 'happy'} style={{ boxShadow: '0 0 0 4px #ff2e4d, 0 0 40px #ff2e4d' }} />
+                      <b className="display" style={{ fontSize: avatarSize > 50 ? 30 : 20, color: round.accused.includes(id) ? '#ff5470' : '#fff' }}>
                         {P(id).name}
                       </b>
                     </motion.div>
                   ))}
                 </div>
+                {round.team && <div className="chip" style={{ borderColor: '#ff2e4d' }}>👥 Jugaban en equipo</div>}
                 {status.impParity && round.elimination && innocentsOut.length > 0 && (
-                  <div style={{ fontWeight: 800, color: '#ff5470' }}>¡Solo quedaban {status.alive.length}! El impostor ya no podía perder.</div>
+                  <div style={{ fontWeight: 800, color: '#ff5470' }}>
+                    ¡Solo quedaban {status.alive.length}! {status.aliveImps > 1 ? 'Los impostores ya eran mayoría.' : 'El impostor ya no podía perder.'}
+                  </div>
                 )}
                 {innocentsOut.length > 0 && (
                   <div className="row" style={{ gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -358,22 +390,37 @@ export function Reveal() {
               )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: round.impostors.length ? '1fr auto 1fr' : '1fr', alignItems: 'center', gap: 8, maxWidth: 420, margin: '0 auto', width: '100%' }}>
-              <MiniCard item={civil} cat={round.cat} label="Civiles" color="#2ee6ff" delay={1.1} style={round.impostors.length ? undefined : { maxWidth: 220, margin: '0 auto' }} />
-              {round.impostors.length > 0 && (
-                <>
-                  <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1.5, type: 'spring' }} className="display" style={{ fontSize: 34 }}>
-                    VS
-                  </motion.div>
-                  <MiniCard item={decoy} cat={decoy?.cat ?? round.cat} label="Impostor" color="#ff2e4d" delay={1.3} />
-                </>
-              )}
-            </div>
-            {round.level && (
+            {decoyCards.length <= 1 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: round.impostors.length ? '1fr auto 1fr' : '1fr', alignItems: 'center', gap: 8, maxWidth: 420, margin: '0 auto', width: '100%' }}>
+                <MiniCard item={civil} cat={round.cat} label="Civiles" color="#2ee6ff" delay={1.1} style={round.impostors.length ? undefined : { maxWidth: 220, margin: '0 auto' }} />
+                {round.impostors.length > 0 && (
+                  <>
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1.5, type: 'spring' }} className="display" style={{ fontSize: 34 }}>
+                      VS
+                    </motion.div>
+                    <MiniCard item={decoy} cat={decoy?.cat ?? round.cat} label={round.impostors.length > 1 ? 'Impostores' : 'Impostor'} color="#ff2e4d" delay={1.3} />
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="stack" style={{ gap: 8, maxWidth: 420, margin: '0 auto', width: '100%' }}>
+                <MiniCard item={civil} cat={round.cat} label="Civiles" color="#2ee6ff" delay={1.1} style={{ width: '48%', margin: '0 auto' }} />
+                <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1.4, type: 'spring' }} className="display center" style={{ fontSize: 28 }}>
+                  VS
+                </motion.div>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${decoyCards.length > 4 ? 3 : 2}, minmax(0, 1fr))`, gap: 8 }}>
+                  {decoyCards.map((d, i) => (
+                    <MiniCard key={d.item.id} item={d.item} cat={d.item.cat} label={d.who.map((id) => P(id).name).join(', ')} color="#ff2e4d" delay={1.5 + i * 0.12} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {round.level && decoyCards.length <= 1 && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.8 }} className="center dim" style={{ fontWeight: 800 }}>
                 Similitud: {LEVEL_TXT[round.level]}
               </motion.div>
             )}
+            </div>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2 }}>
               {control(
                 <Button onClick={afterTruth}>
@@ -389,7 +436,7 @@ export function Reveal() {
             <div className="row" style={{ gap: 12 }}>
               <Avatar player={P(guesser)} size={48} />
               <div>
-                <div className="label">{online ? (me === guesser ? '¡Te toca a ti!' : `Elige ${P(guesser).name}`) : `Dale el teléfono a ${P(guesser).name}`}</div>
+                <div className="label">{online && me === guesser ? '¡Te toca a ti!' : mineGuess ? `Dale el teléfono a ${P(guesser).name}` : `Elige ${P(guesser).name}`}</div>
                 <div className="h2" style={{ fontSize: 28 }}>
                   ¿Cuál era la carta de los civiles?
                 </div>
@@ -420,7 +467,7 @@ export function Reveal() {
                 {control(<Button onClick={() => nextGuess()}>Continuar ➜</Button>)}
               </motion.div>
             ) : (
-              online && me !== guesser && <Waiting text={`${P(guesser).name} está eligiendo…`} />
+              !mineGuess && <Waiting text={`${P(guesser).name} está eligiendo…`} />
             )}
           </motion.div>
         )}
@@ -498,7 +545,7 @@ function PlayerStamp({ player, impostor, delay }: { player: Player; impostor: bo
   return (
     <div className="center" style={{ gap: 12 }}>
       <motion.div initial={{ scale: 1.4 }} animate={{ scale: 1, filter: impostor ? 'none' : 'grayscale(.6)' }} transition={{ delay }}>
-        <Avatar player={player} size={96} />
+        <Avatar player={player} size={96} mood={impostor ? 'scared' : undefined} still={!impostor} />
       </motion.div>
       <b className="display" style={{ fontSize: 34 }}>
         {player.name}

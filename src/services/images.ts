@@ -65,7 +65,12 @@ export async function downloadAll(onProgress: (s: { done: number; total: number;
     while (queue.length && !stop()) {
       const url = queue.shift()!;
       try {
-        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        let res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        // Wikimedia frena a quien pide demasiado rápido: se espera y se reintenta.
+        for (let wait = 2000; res.status === 429 && wait <= 8000 && !stop(); wait *= 2) {
+          await new Promise((r) => setTimeout(r, wait));
+          res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        }
         if (!res.ok) throw new Error(String(res.status));
         // Con el service worker activo ya quedó guardada; si no (primera visita), se guarda aquí.
         if (cache && !(await cache.match(url))) await cache.put(url, res.clone());
@@ -77,7 +82,8 @@ export async function downloadAll(onProgress: (s: { done: number; total: number;
       onProgress({ done, total: urls.length, failed });
     }
   };
-  await Promise.all(Array.from({ length: 5 }, worker));
+  // Pocas descargas a la vez para no saturar a Wikimedia (ni el Wi-Fi de la fiesta).
+  await Promise.all(Array.from({ length: 3 }, worker));
 }
 
 /** Limpia la caché de versiones anteriores (guardaba respuestas opacas que ya no sirven). */

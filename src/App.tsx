@@ -1,12 +1,15 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { setVibration, sfx, type MusicMood } from './audio/sfx';
 import { screenAnim } from './components/ui';
 import { CAT } from './data/categories';
 import { THEME_BY_ID } from './data/themes';
 import { Backdrop, type Mood } from './fx/Backdrop';
 import { FxLayer } from './fx/fx';
+import { ReactionLayer } from './fx/reactions';
+import { RainLayer, ReactFab, Scene, SceneCard, sceneFor, type SceneTitle } from './fx/scene';
 import { SKINS, skinVars } from './fx/skins';
+import { react } from './net/net';
 import { useNet } from './net/state';
 import { Awards } from './screens/Awards';
 import { Custom } from './screens/Custom';
@@ -46,6 +49,9 @@ const SCREENS: Record<Screen, () => React.JSX.Element | null> = {
   online: Online,
   lobby: Lobby,
 };
+
+/** Pantallas donde se puede reaccionar con emojis. */
+const REACT_ON: Screen[] = ['discuss', 'vote', 'reveal', 'score', 'awards', 'lobby'];
 
 /** Pantallas que necesitan una ronda en curso para dibujarse. */
 const NEEDS_ROUND: Screen[] = [...IN_ROUND, 'score'];
@@ -123,12 +129,45 @@ export function App() {
   // Una pantalla de ronda sin ronda (p. ej. un invitado que recarga) cae al menú o a la sala.
   const safe: Screen = NEEDS_ROUND.includes(screen) && !round ? (online ? 'lobby' : 'home') : screen;
   const Current = SCREENS[safe] ?? Home;
+
+  // Escena de fondo: según la fase, la categoría (ya revelada) o el evento de la ronda.
+  const scene = sceneFor({
+    screen: safe,
+    cat: showCat && !theme ? round.cat : undefined,
+    themeEmoji: theme?.emoji,
+    event: showCat && round.event && !round.hidden ? round.event : undefined,
+  });
+
+  // Título que barre la pantalla al entrar a una fase nueva.
+  const [title, setTitle] = useState<SceneTitle | null>(null);
+  const prev = useRef<Screen>(safe);
+  useEffect(() => {
+    const from = prev.current;
+    prev.current = safe;
+    if (from === safe || !round) return;
+    const t: Omit<SceneTitle, 'key'> | null =
+      safe === 'discuss' && from === 'deal'
+        ? { text: '¡A dar pistas!', emoji: '🗣️', color: cat?.color ?? sk.c1 }
+        : safe === 'discuss' && from === 'reveal'
+          ? { text: '¡Sigan buscando!', emoji: '🔎', color: '#ffb547' }
+          : safe === 'vote'
+            ? { text: '¡A votar!', emoji: '🗳️', color: '#ff2e4d' }
+            : safe === 'score'
+              ? { text: 'Resultados', emoji: '🏆', color: '#d9a400' }
+              : null;
+    if (!t) return;
+    setTitle({ ...t, key: `${safe}-${round.n}-${round.talks}-${round.voteN}` });
+    const id = setTimeout(() => setTitle(null), 1400);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safe]);
   const c1 = cat?.color ?? sk.c1;
   const c2 = cat?.color2 ?? sk.c2;
 
   return (
     <div className={`app skin-${skin}`} style={{ ...skinVars(skin), '--accent': cat?.color ?? sk.c1, '--accent2': cat?.color2 ?? sk.c2 } as CSSProperties}>
       <Backdrop c1={c1} c2={c2} mood={mood} skin={skin} />
+      <Scene emojis={scene} faint={!inRound && safe !== 'score' && safe !== 'awards'} />
       <AnimatePresence mode="wait">
         {/* Cada ronda nueva vuelve a montar la ruleta, aunque ya se estuviera en ella. */}
         <motion.div key={safe === 'intro' ? `intro-${round?.n}-${round?.civil}` : safe} {...screenAnim} style={{ position: 'absolute', inset: 0 }}>
@@ -136,6 +175,10 @@ export function App() {
         </motion.div>
       </AnimatePresence>
       <NetBanner />
+      <SceneCard title={title} />
+      {REACT_ON.includes(safe) && (safe !== 'lobby' || online) && <ReactFab key={safe} onReact={react} />}
+      <ReactionLayer />
+      <RainLayer />
       <FxLayer />
     </div>
   );

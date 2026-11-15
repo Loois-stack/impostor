@@ -8,9 +8,9 @@ import { ACHIEVEMENTS, emptyStats, type Stats } from '../engine/achievements';
 import { dealMissions, INTENSITY, maybeChallenge, type ChallengeState, type Intensity } from '../engine/challenges';
 import { CURSED_WORDS, MX_ACCENTS, rollEvent, rollHidden, type EventId, type Hidden } from '../engine/events';
 import { makeRng } from '../engine/rng';
-import { pickImpostors, turnOrder } from '../engine/roles';
+import { pickImpostors, resolveImpostors, turnOrder } from '../engine/roles';
 import { levelFromXp, scoreRound, streakMult, type ScoreLine, type Winner } from '../engine/scoring';
-import { commitRound, emptyHistory, pickCategory, pickCivil, pickDecoy, pickFromTheme, pickTheme, type History, type Similarity } from '../engine/selector';
+import { commitRound, emptyHistory, pickCategory, pickCivil, pickDecoys, pickFromTheme, pickTheme, type History, type Similarity } from '../engine/selector';
 import { NOBODY, tally } from '../engine/vote';
 import { link, type NetAction } from '../net/link';
 
@@ -25,6 +25,8 @@ export interface Player {
   name: string;
   color: string;
   avatar: string;
+  /** Sala: jugador sin teléfono propio; juega en el teléfono de este otro jugador. */
+  owner?: string;
 }
 
 export interface Profile {
@@ -45,7 +47,10 @@ export interface Settings {
   cats: CategoryId[];
   similarity: Similarity;
   mode: 'similar' | 'classic';
-  impostors: 1 | 2;
+  /** 0 = automático según los jugadores; si no, cuántos (se ajusta al máximo posible). */
+  impostors: number;
+  /** Los impostores se conocen, comparten carta y ganan en equipo. */
+  impTeam: boolean;
   /** 0 = vueltas infinitas (se juega hasta que acabe el tiempo o decidan votar). */
   laps: 0 | 1 | 2 | 3;
   /** Segundos por turno (0 = libre). */
@@ -88,9 +93,16 @@ export interface Round {
   n: number;
   cat: CategoryId;
   civil: string;
+  /** Carta del primer impostor (la "principal"). */
   decoy: string | null;
+  /** Carta de cada impostor: distinta para cada uno, salvo que jueguen en equipo. */
+  decoys: Record<string, string>;
   level: Level | null;
   impostors: string[];
+  /** Cuántos impostores cree la mesa que hay (lo anunciado; un evento oculto puede cambiarlo). */
+  declared: number;
+  /** Los impostores se conocen y ganan en equipo. */
+  team: boolean;
   order: string[];
   laps: number;
   timer: number;
@@ -224,18 +236,23 @@ interface State {
   closeRoom(): void;
   /** Un teléfono entra a la sala. Devuelve false si ya no cabe. */
   joinPlayer(id: string, name: string): boolean;
+  /** Sala: suma a alguien que juega en el teléfono de `owner`. */
+  addLocal(owner: string, name: string): boolean;
   /** Acción pedida por un invitado; el anfitrión la valida antes de aplicarla. */
   remote(from: string, a: NetAction): void;
 }
 
-export const MAX_PLAYERS = 15;
+export const MAX_PLAYERS = 20;
 export const PLAYER_COLORS = [
   '#ff2e4d', '#2ee6ff', '#ffd23d', '#39ff88', '#ff5fc8', '#7c5cff', '#ff8a3d', '#48c6ff',
   '#c6ff3d', '#ff9ad5', '#9d7bff', '#00e0b0', '#ffb547', '#6ea8ff', '#e8e2d0',
+  '#f72585', '#4cc9f0', '#f4a261', '#b8f2e6', '#e9c46a',
 ];
-export const AVATARS = ['🦊', '🐸', '👽', '🤖', '🐙', '👻', '🦄', '🐼', '🦖', '🐯', '🧟', '🐵', '🦉', '🐺', '🤡'];
-/** Opciones extra para quien quiera cambiar su avatar. */
-export const AVATAR_CHOICES = [...AVATARS, '🐶', '🐱', '🦁', '🐷', '🐔', '🦈', '🐲', '🦋', '🌵', '🌮', '🔥', '💀', '👑', '😈', '🥷', '🧙', '🧛', '🤠', '🥸', '😎', '🤓', '🎃', '🍄', '⚡', '🪩'];
+export const AVATARS = ['🦊', '🐸', '👽', '🤖', '🐙', '👻', '🦄', '🐼', '🦖', '🐯', '🧟', '🐵', '🦉', '🐺', '🤡', '🐶', '🐱', '🦁', '🐷', '🐔'];
+/** Opciones para quien quiera cambiar su avatar. */
+export const AVATAR_CHOICES = [
+  ...new Set([...AVATARS, '🦈', '🐲', '🦋', '🌵', '🌮', '🔥', '💀', '👑', '😈', '🥷', '🧙', '🧛', '🤠', '🥸', '😎', '🤓', '🎃', '🍄', '⚡', '🪩']),
+];
 
 const emptySession = (): Session => ({ round: 0, stats: {}, scores: {}, impCounts: {}, streaks: {}, lastImpostors: [] });
 const emptySessionStat = (): SessionStat => ({ accused: 0, impWins: 0, civWins: 0, challenges: 0, cursed: 0, allyWins: 0 });
@@ -258,7 +275,8 @@ export const defaultSettings: Settings = {
   cats: CATEGORIES.map((c) => c.id),
   similarity: 'mixed',
   mode: 'similar',
-  impostors: 1,
+  impostors: 0,
+  impTeam: false,
   laps: 0,
   timer: 0,
   roundTime: 180,
@@ -301,11 +319,11 @@ export function roundStatus(r: Pick<Round, 'order' | 'accused' | 'impostors' | '
   return { alive, aliveImps, aliveCivs, over, impParity };
 }
 
-/** A cuántos sospechosos se acusa en cada votación. */
-export function suspectsNeeded(r: Pick<Round, 'elimination' | 'event' | 'hidden'>, players: number, impostors: number): number {
+/** A cuántos sospechosos se acusa en cada votación: en eliminación de uno en uno; si no, tantos como impostores anunciados. */
+export function suspectsNeeded(r: Pick<Round, 'elimination' | 'declared' | 'order' | 'accused'>): number {
   if (r.elimination) return 1;
-  if (r.event === 'double' && !r.hidden) return 2;
-  return Math.min(impostors, Math.max(1, players - 2));
+  const alive = r.order.length - r.accused.length;
+  return Math.max(1, Math.min(r.declared, alive - 2));
 }
 
 /** Siguiente turno a partir de (lap, turn) saltando eliminados. */
@@ -380,6 +398,15 @@ function rollTurnChallenge(r: Round, h: History, s: Settings): { r: Round; h: Hi
   };
 }
 
+/** Nombre sin repetir dentro de la partida ("Mar", "Mar 2"…). */
+function uniqueName(players: Player[], name: string, id: string) {
+  const clean = name.trim().slice(0, 16) || 'Jugador';
+  const taken = (n: string) => players.some((p) => p.id !== id && p.name.toLowerCase() === n.toLowerCase());
+  let unique = clean;
+  for (let k = 2; taken(unique); k++) unique = `${clean.slice(0, 14)} ${k}`;
+  return unique;
+}
+
 function freeLook(players: Player[]) {
   const used = new Set(players.map((p) => p.color));
   const idx = PLAYER_COLORS.findIndex((c) => !used.has(c));
@@ -416,7 +443,8 @@ export const useGame = create<State>()(
         const next = { ...profiles };
         // En sala se conserva el perfil: ese teléfono puede volver a entrar.
         if (!online) delete next[id];
-        set({ players: players.filter((p) => p.id !== id), profiles: next });
+        // Si se va un teléfono, se van también quienes jugaban en él.
+        set({ players: players.filter((p) => p.id !== id && p.owner !== id), profiles: next });
       },
 
       movePlayer(id, dir) {
@@ -444,7 +472,7 @@ export const useGame = create<State>()(
         const chosen = settings.cats.filter(playable);
         const allowed = chosen.length ? chosen : CATEGORIES.map((c) => c.id);
         const horror = allowed.filter((c) => HORROR_CATS.includes(c));
-        const maxImp = Math.min(settings.impostors, Math.max(1, ids.length - 2));
+        const maxImp = resolveImpostors(settings.impostors, ids.length);
         const event = rollEvent(
           {
             enabled: settings.events,
@@ -460,22 +488,29 @@ export const useGame = create<State>()(
         );
         const hidden = event ? rollHidden(event, rng) : undefined;
 
-        const impCount = event === 'nobody' ? 0 : event === 'double' ? 2 : maxImp;
+        const impCount = event === 'nobody' ? 0 : event === 'double' ? maxImp + 1 : maxImp;
+        // Lo que la mesa sabe: un evento oculto no cambia lo anunciado.
+        const declared = event === 'double' && !hidden ? maxImp + 1 : maxImp;
+        const team = settings.impTeam && impCount > 1 && event !== 'blind';
         const needsDecoy = impCount > 0 && (settings.mode === 'similar' || event === 'blind');
+        // En equipo comparten carta; si no, cada impostor recibe una distinta.
+        const nDecoys = needsDecoy ? (team ? 1 : impCount) : 0;
         const mixRound = event !== 'terror' && (settings.mix === 'on' || (settings.mix === 'mixed' && rng.chance(0.35)));
         const theme = mixRound ? pickTheme(history, rng) : undefined;
         let civil;
-        let d: { decoy: ReturnType<typeof pickCivil>; level: Level } | null;
+        let picks: { decoy: ReturnType<typeof pickCivil>; level: Level }[] = [];
         if (theme) {
-          const pick = pickFromTheme(theme, history, rng);
+          const pick = pickFromTheme(theme, history, rng, Math.max(1, nDecoys));
           civil = pick.civil;
-          d = needsDecoy ? { decoy: pick.decoy, level: pick.level } : null;
+          if (nDecoys) picks = pick.decoys.map((decoy, i) => ({ decoy, level: i ? 2 : pick.level }));
         } else {
           civil = pickCivil(pickCategory(event === 'terror' ? horror : allowed, history, rng), history, rng);
-          d = needsDecoy ? pickDecoy(civil, settings.similarity, history, rng) : null;
+          if (nDecoys) picks = pickDecoys(civil, settings.similarity, history, rng, nDecoys);
         }
+        const d = picks[0] ?? null;
         const cat = civil.cat;
         const impostors = pickImpostors(ids, impCount, session.impCounts, session.lastImpostors, rng);
+        const decoys = Object.fromEntries(picks.length ? impostors.map((id, i) => [id, picks[i % picks.length].decoy.id]) : []);
         const order = turnOrder(ids, impostors, session.lastStarter, rng);
         const civilians = ids.filter((id) => !impostors.includes(id));
         const one = (on: boolean) => (on && civilians.length > 1 ? rng.pick(civilians) : undefined);
@@ -489,7 +524,7 @@ export const useGame = create<State>()(
           adult: settings.adult,
           kindsOff: settings.kindsOff,
         });
-        history = commitRound(history, cat, civil, d?.decoy ?? null, theme?.id);
+        history = commitRound(history, cat, civil, picks.map((p) => p.decoy), theme?.id);
         if (Object.keys(missions).length)
           history = { ...history, challengeLast: { ...history.challengeLast, ...Object.fromEntries(Object.values(missions).map((m) => [m, history.round])) } };
 
@@ -499,8 +534,11 @@ export const useGame = create<State>()(
           cat,
           civil: civil.id,
           decoy: d?.decoy.id ?? null,
+          decoys,
           level: d?.level ?? null,
           impostors,
+          declared,
+          team,
           order,
           laps: event === 'sudden' ? 1 : settings.laps,
           timer: event === 'sudden' ? 10 : settings.timer,
@@ -549,7 +587,7 @@ export const useGame = create<State>()(
       },
 
       markReady(player) {
-        if (link.guest) return link.send({ a: 'ready' });
+        if (link.guest) return link.send({ a: 'ready', as: player });
         const { round } = get();
         if (!round || round.phase !== 'deal' || round.ready.includes(player) || !round.order.includes(player)) return;
         const ready = [...round.ready, player];
@@ -565,7 +603,10 @@ export const useGame = create<State>()(
       },
 
       nextTurn(result) {
-        if (link.guest) return link.send({ a: 'next' });
+        if (link.guest) {
+          const r = get().round;
+          return link.send({ a: 'next', as: r ? r.order[r.turn] : undefined });
+        }
         const { round, history, settings } = get();
         if (!round || round.phase !== 'discuss') return;
         // El evento de turno se quita al pasar al siguiente jugador.
@@ -583,7 +624,7 @@ export const useGame = create<State>()(
       },
 
       dismissChallenge() {
-        if (link.guest) return link.send({ a: 'accept' });
+        if (link.guest) return link.send({ a: 'accept', as: get().round?.pendingChallenge });
         const { round } = get();
         if (round) set({ round: { ...round, pendingChallenge: undefined } });
       },
@@ -624,7 +665,7 @@ export const useGame = create<State>()(
       },
 
       castVote(voter, target) {
-        if (link.guest) return link.send({ a: 'vote', target });
+        if (link.guest) return link.send({ a: 'vote', as: voter, target });
         const { round, online } = get();
         if (!round || round.phase !== 'vote') return;
         const { alive } = roundStatus(round);
@@ -636,9 +677,9 @@ export const useGame = create<State>()(
       },
 
       closeVote() {
-        const { round, players, settings } = get();
+        const { round } = get();
         if (!round || link.guest || round.phase !== 'vote') return;
-        const t = tally(round.votes, suspectsNeeded(round, players.length, settings.impostors));
+        const t = tally(round.votes, suspectsNeeded(round));
         get().vote(t.accused, t.nobody, { counts: t.counts, tie: t.tie });
       },
 
@@ -648,8 +689,8 @@ export const useGame = create<State>()(
       },
 
       guess(id) {
-        if (link.guest) return link.send({ a: 'guess', id });
         const { round } = get();
+        if (link.guest) return link.send({ a: 'guess', id, as: round ? round.impostors.filter((i) => round.accused.includes(i))[round.guessIdx] : undefined });
         if (!round || round.step !== 'guess' || round.guessPick) return;
         const guesser = round.impostors.filter((i) => round.accused.includes(i))[round.guessIdx];
         if (!guesser) return;
@@ -683,8 +724,9 @@ export const useGame = create<State>()(
           lastTally: undefined,
           startedAt: Date.now(),
           pendingChallenge: undefined,
-          // Si ya cayó uno de dos impostores, el "doble impostor" dejó de ser secreto.
-          hidden: round.event === 'double' && caughtOne ? undefined : round.hidden,
+          // Si atraparon a uno de más, el "impostor extra" dejó de ser secreto.
+          hidden: round.event === 'double' && caughtOne && round.hidden && round.impostors.length > round.declared ? undefined : round.hidden,
+          declared: round.event === 'double' && round.hidden && caughtOne ? round.impostors.length : round.declared,
         };
         const { r, h } = rollTurnChallenge(next, history, settings);
         set({ round: r, history: h, screen: 'discuss' });
@@ -717,6 +759,7 @@ export const useGame = create<State>()(
           event: round.event,
           accomplice: round.accomplice,
           jester: round.jester,
+          team: round.team,
         });
 
         const scores = { ...session.scores };
@@ -839,11 +882,8 @@ export const useGame = create<State>()(
 
       joinPlayer(id, name) {
         const { players, profiles } = get();
-        const clean = name.trim().slice(0, 16) || 'Jugador';
         const existing = players.find((p) => p.id === id);
-        const taken = (n: string) => players.some((p) => p.id !== id && p.name.toLowerCase() === n.toLowerCase());
-        let unique = clean;
-        for (let k = 2; taken(unique); k++) unique = `${clean.slice(0, 14)} ${k}`;
+        const unique = uniqueName(players, name, id);
         if (existing) {
           if (existing.name !== unique) set({ players: players.map((p) => (p.id === id ? { ...p, name: unique } : p)) });
           return true;
@@ -854,23 +894,48 @@ export const useGame = create<State>()(
         return true;
       },
 
+      addLocal(owner, name) {
+        const { players, profiles, online } = get();
+        // Solo en sala, y solo un teléfono que ya está en ella puede sumar gente.
+        if (!online || !name.trim() || players.length >= MAX_PLAYERS || !players.some((p) => p.id === owner && !p.owner)) return false;
+        const id = `${owner}~${uid()}`;
+        const p: Player = { id, name: uniqueName(players, name, id), owner, ...freeLook(players) };
+        set({ players: [...players, p], profiles: { ...profiles, [id]: newProfile() } });
+        return true;
+      },
+
       remote(from, a) {
-        const { round, screen } = get();
-        if (!round || link.guest || !round.order.includes(from)) return;
+        if (link.guest) return;
         const s = get();
+        const { round, screen, players } = s;
+        if (!players.some((p) => p.id === from)) return;
+        // Un teléfono puede actuar por sí mismo o por quien juega en él.
+        const owns = (id?: string): id is string => !!id && (id === from || players.some((p) => p.id === id && p.owner === from));
+        const between = !round || !!round.result;
+        switch (a.a) {
+          case 'addLocal':
+            return void (typeof a.name === 'string' && s.addLocal(from, a.name));
+          case 'removeLocal':
+            return a.as !== from && owns(a.as) && between ? s.removePlayer(a.as) : undefined;
+          case 'avatar':
+            return owns(a.as) && AVATAR_CHOICES.includes(a.avatar) ? s.setAvatar(a.as, a.avatar) : undefined;
+        }
+        if (!round) return;
+        const as = a.a === 'cursed' ? from : a.as ?? from;
+        if (!owns(as) || !round.order.includes(as)) return;
         switch (a.a) {
           case 'ready':
-            return screen === 'deal' ? s.markReady(from) : undefined;
+            return screen === 'deal' ? s.markReady(as) : undefined;
           case 'next':
             // Solo quien tiene el turno puede pasarlo (el anfitrión lo hace desde su teléfono).
-            return screen === 'discuss' && round.order[round.turn] === from && !round.pendingChallenge ? s.nextTurn() : undefined;
+            return screen === 'discuss' && round.order[round.turn] === as && !round.pendingChallenge ? s.nextTurn() : undefined;
           case 'accept':
-            return round.pendingChallenge === from ? s.dismissChallenge() : undefined;
+            return round.pendingChallenge === as ? s.dismissChallenge() : undefined;
           case 'vote':
-            return screen === 'vote' ? s.castVote(from, a.target) : undefined;
+            return screen === 'vote' ? s.castVote(as, a.target) : undefined;
           case 'guess': {
             const guesser = round.impostors.filter((i) => round.accused.includes(i))[round.guessIdx];
-            return screen === 'reveal' && guesser === from && BY_ID[a.id] ? s.guess(a.id) : undefined;
+            return screen === 'reveal' && guesser === as && BY_ID[a.id] ? s.guess(a.id) : undefined;
           }
           case 'cursed':
             return round.cursedWord && round.order.includes(a.player) && !round.cursed.includes(a.player) ? s.toggleCursed(a.player) : undefined;
@@ -879,7 +944,7 @@ export const useGame = create<State>()(
     }),
     {
       name: 'impostor-v1',
-      version: 2,
+      version: 3,
       // Un invitado refleja la partida del anfitrión: eso no debe pisar lo guardado en su teléfono.
       storage: createJSONStorage(() => {
         const ls = localStorage; // si no existe (pruebas en Node) esto lanza y zustand desactiva el guardado
@@ -910,6 +975,8 @@ export const useGame = create<State>()(
           p.round = null;
           if (p.screen && !['home', 'players', 'setup', 'settings', 'howto', 'custom'].includes(p.screen)) p.screen = 'home';
         }
+        // v2 → v3: varios impostores con carta propia y modo equipo.
+        if (version < 3 && p.round) p.round = { ...p.round, decoys: p.round.decoys ?? {}, declared: p.round.declared ?? p.round.impostors.length, team: !!p.round.team };
         return p;
       },
       merge: (persisted, current) => {

@@ -1,4 +1,5 @@
 import { INTENSITY, type Intensity } from './challenges';
+import { maxImpostors } from './roles';
 import type { Rng } from './rng';
 
 export type EventId =
@@ -34,7 +35,7 @@ export interface GameEvent {
 }
 
 export const EVENTS: Record<EventId, GameEvent> = {
-  double: { id: 'double', title: 'Doble impostor', emoji: '👥', color: '#ff2e4d', desc: '¡Esta ronda hay DOS impostores! Y no se conocen entre ellos.', canHide: true, minPlayers: 5, weight: 3 },
+  double: { id: 'double', title: 'Impostor extra', emoji: '👥', color: '#ff2e4d', desc: '¡Esta ronda hay un impostor MÁS de lo normal! Cuenten bien antes de cantar victoria.', canHide: true, minPlayers: 5, weight: 3 },
   blind: { id: 'blind', title: 'Impostor a ciegas', emoji: '🙈', color: '#7c5cff', desc: 'El impostor NO sabe que es el impostor. Su carta parece normal… Cualquiera podría serlo. Incluso tú.', weight: 2 },
   terror: { id: 'terror', title: 'Ronda de terror', emoji: '🩸', color: '#8a0020', desc: 'Las luces se apagan. La categoría será de horror.', weight: 2 },
   sudden: { id: 'sudden', title: 'Muerte súbita', emoji: '⏱️', color: '#ffb547', desc: 'Una sola vuelta de pistas y 10 segundos por turno. ¡Piensa rápido!', rule: 'Una vuelta · 10 s por turno', weight: 2 },
@@ -112,7 +113,8 @@ export function eligibleEvents(opts: Pick<RollOpts, 'players' | 'impostors' | 'h
   return EVENT_LIST.filter((e) => {
     if (e.id === opts.lastEvent || opts.off?.includes(e.id)) return false;
     if (opts.players < (e.minPlayers ?? 0)) return false;
-    if (e.id === 'double') return opts.impostors === 1;
+    // Solo si cabe uno más sin que los impostores igualen a los civiles.
+    if (e.id === 'double') return opts.impostors + 1 <= maxImpostors(opts.players);
     if (e.id === 'terror') return opts.horrorAvailable;
     return true;
   });

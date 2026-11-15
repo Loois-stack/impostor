@@ -1,7 +1,8 @@
 import type { DataConnection, Peer, PeerOptions } from 'peerjs';
-import { IN_ROUND, syncCustom, useGame, type CustomCard, type Screen } from '../store/game';
+import { IN_ROUND, MAX_PLAYERS, syncCustom, useGame, type CustomCard, type Screen } from '../store/game';
 import { usePrefs } from '../store/prefs';
 import { clock } from './clock';
+import { REACTIONS, showReaction } from '../fx/reactions';
 import { link, type NetAction } from './link';
 import { publicId, useNet } from './state';
 
@@ -18,7 +19,7 @@ import { publicId, useNet } from './state';
  * Es un juego entre amigos: el estado completo viaja a cada teléfono y no se cifra nada extra.
  */
 
-const PROTOCOL = 2;
+const PROTOCOL = 3;
 const PREFIX = 'impostor-quien-miente-';
 /** Sin letras ni números que se confundan al dictarlos (0/O, 1/I…). */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -30,11 +31,12 @@ type Snapshot = Pick<ReturnType<typeof useGame.getState>, 'screen' | 'players' |
 
 type HostMsg =
   | { t: 'state'; s: Snapshot; now: number; present: string[] }
+  | { t: 'react'; e: string; from: string }
   | { t: 'cards'; cards: CustomCard[] }
   | { t: 'deny'; reason: 'full' | 'version' }
   | { t: 'ping' }
   | { t: 'bye' };
-type GuestMsg = { t: 'hello'; v: number; id: string; name: string } | { t: 'act'; a: NetAction } | { t: 'pong' } | { t: 'bye' };
+type GuestMsg = { t: 'hello'; v: number; id: string; name: string } | { t: 'act'; a: NetAction } | { t: 'react'; e: string } | { t: 'pong' } | { t: 'bye' };
 
 export const normalizeCode = (raw: string) =>
   raw
@@ -182,9 +184,10 @@ function onGuest(conn: DataConnection) {
     if (!pid || conns.get(pid) !== conn) return;
     lastSeen.set(pid, Date.now());
     if (m.t === 'act' && m.a && typeof m.a === 'object') useGame.getState().remote(pid, m.a);
+    else if (m.t === 'react') relayReaction(m.e, pid);
     else if (m.t === 'bye') {
       conns.delete(pid);
-      // Quien se sale entre rondas deja su lugar; a media ronda se conserva para no romperla.
+      // Quien se sale entre rondas deja su lugar (con quienes jugaban en su teléfono); a media ronda se conserva.
       const { round } = useGame.getState();
       if (!round || round.result) useGame.getState().removePlayer(pid);
       schedule();
@@ -296,11 +299,14 @@ function onHost(raw: unknown) {
     case 'cards':
       syncCustom(m.cards);
       break;
+    case 'react':
+      if (REACTIONS.includes(m.e)) showReaction(m.e, m.from);
+      break;
     case 'ping':
       send(hostConn, { t: 'pong' });
       break;
     case 'deny':
-      void exitGuest(m.reason === 'full' ? 'La sala está llena (máximo 15 jugadores).' : 'Tu app y la del anfitrión son de versiones distintas. Recarguen la página los dos.');
+      void exitGuest(m.reason === 'full' ? `La sala está llena (máximo ${MAX_PLAYERS} jugadores).` : 'Tu app y la del anfitrión son de versiones distintas. Recarguen la página los dos.');
       break;
     case 'bye':
       void exitGuest('El anfitrión cerró la sala.');
@@ -385,6 +391,52 @@ async function exitGuest(error?: string) {
   link.send = () => {};
   useNet.setState({ role: 'off', code: '', status: error ? 'error' : 'idle', error, present: [] });
   useGame.setState({ screen: error ? 'online' : 'home', online: false });
+}
+
+// ------------------------------------------------------------------ Reacciones
+
+const lastReact = new Map<string, number[]>();
+
+/** Anfitrión: reenvía una reacción a todos (con un límite para que nadie inunde la pantalla). */
+function relayReaction(e: unknown, from: string) {
+  if (typeof e !== 'string' || !REACTIONS.includes(e)) return;
+  const t = Date.now();
+  const recent = (lastReact.get(from) ?? []).filter((x) => t - x < 2000);
+  if (recent.length >= 5) return;
+  lastReact.set(from, [...recent, t]);
+  showReaction(e, from);
+  for (const c of conns.values()) send(c, { t: 'react', e, from });
+}
+
+/** Lanza una reacción: en sala la ven todos los teléfonos; con un solo teléfono, solo este. */
+export function react(e: string) {
+  const net = useNet.getState();
+  const me = publicId(usePrefs.getState().deviceId);
+  if (net.role === 'guest') {
+    showReaction(e, me);
+    send(hostConn, { t: 'react', e });
+  } else if (net.role === 'host') relayReaction(e, me);
+  else showReaction(e);
+}
+
+// ------------------------------------------------------------------ Jugadores sin teléfono
+
+/** Suma a alguien que juega en este teléfono. */
+export function addLocalPlayer(name: string) {
+  if (link.guest) return link.send({ a: 'addLocal', name });
+  useGame.getState().addLocal(publicId(usePrefs.getState().deviceId), name);
+}
+
+/** Quita a alguien que jugaba en este teléfono (entre rondas). */
+export function removeLocalPlayer(id: string) {
+  if (link.guest) return link.send({ a: 'removeLocal', as: id });
+  useGame.getState().removePlayer(id);
+}
+
+/** Cambia el avatar de un jugador de este teléfono (el anfitrión puede cambiar cualquiera). */
+export function changeAvatar(id: string, avatar: string) {
+  if (link.guest) return link.send({ a: 'avatar', as: id, avatar });
+  useGame.getState().setAvatar(id, avatar);
 }
 
 // ------------------------------------------------------------------ Común

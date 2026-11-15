@@ -5,6 +5,7 @@ import { EVENTS, EVENT_LIST, eligibleEvents, MX_ACCENTS, rollEvent, rollHidden }
 import { makeRng } from './rng';
 import { scoreRound } from './scoring';
 import { NOBODY, tally } from './vote';
+import { balanceOf, maxImpostors, recommendedImpostors, resolveImpostors } from './roles';
 import { activeTurnEvent, clockFor, isLastTurn, pendingJudgments, roundStatus, suspectsNeeded, useGame, type Round } from '../store/game';
 
 describe('eventos seguros y divertidos', () => {
@@ -183,11 +184,46 @@ describe('reglas de la ronda', () => {
   });
 
   it('cuántos sospechosos se acusan', () => {
-    expect(suspectsNeeded({ elimination: true, event: 'double' }, 8, 2)).toBe(1);
-    expect(suspectsNeeded({ elimination: false, event: 'double' }, 8, 1)).toBe(2);
-    // Un doble impostor oculto no debe delatarse pidiendo dos acusados.
-    expect(suspectsNeeded({ elimination: false, event: 'double', hidden: 'mystery' }, 8, 1)).toBe(1);
-    expect(suspectsNeeded({ elimination: false }, 3, 2)).toBe(1);
+    const order = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    expect(suspectsNeeded({ elimination: true, declared: 3, order, accused: [] })).toBe(1);
+    expect(suspectsNeeded({ elimination: false, declared: 3, order, accused: [] })).toBe(3);
+    // Nunca se pide acusar a tantos que no quede a quién creerle.
+    expect(suspectsNeeded({ elimination: false, declared: 2, order: ['a', 'b', 'c'], accused: [] })).toBe(1);
+  });
+});
+
+describe('cantidad de impostores', () => {
+  it('siempre quedan más civiles que impostores', () => {
+    for (let n = 3; n <= 20; n++) {
+      const max = maxImpostors(n);
+      expect(n - max, `n=${n}`).toBeGreaterThan(max);
+      expect(recommendedImpostors(n)).toBeLessThanOrEqual(max);
+      expect(resolveImpostors(99, n)).toBe(max);
+      expect(resolveImpostors(0, n)).toBe(recommendedImpostors(n));
+    }
+    expect([3, 5, 6, 9, 12, 16, 20].map(recommendedImpostors)).toEqual([1, 1, 2, 3, 4, 5, 5]);
+    expect(balanceOf(1, 9)).toBe('easy');
+    expect(balanceOf(3, 9)).toBe('fair');
+    expect(balanceOf(4, 9)).toBe('hard');
+  });
+
+  it('el impostor extra solo sale si cabe uno más', () => {
+    const ids = (players: number, impostors: number) => eligibleEvents({ players, impostors, horrorAvailable: true }).map((e) => e.id);
+    expect(ids(5, 1)).toContain('double');
+    expect(ids(5, 2)).not.toContain('double');
+    expect(ids(9, 3)).toContain('double');
+    expect(ids(9, 4)).not.toContain('double');
+  });
+
+  it('premio parcial proporcional y modo equipo', () => {
+    const base = { players: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'], impostors: ['a', 'b', 'c'], guessed: {}, challenges: {}, cursed: [], nobodyVote: false };
+    const line = (r: ReturnType<typeof scoreRound>, p: string) => r.lines.find((l) => l.player === p)!;
+    expect(line(scoreRound({ ...base, accused: ['a'] }), 'i').base).toBe(35);
+    expect(line(scoreRound({ ...base, accused: ['a', 'b'] }), 'i').base).toBe(65);
+    // Solos: el atrapado no gana nada. En equipo, si sobrevive alguno, el atrapado también suma.
+    expect(line(scoreRound({ ...base, accused: ['a'] }), 'a').base).toBe(0);
+    expect(line(scoreRound({ ...base, accused: ['a'], team: true }), 'a').base).toBe(100);
+    expect(line(scoreRound({ ...base, accused: ['a', 'b', 'c'], team: true }), 'a').base).toBe(0);
   });
 });
 
@@ -200,13 +236,48 @@ describe('partida completa en el store', () => {
     g().newSession();
     g().clearHistory();
     for (const n of ['Ana', 'Beto', 'Caro', 'Dani', 'Eli']) g().addPlayer(n);
-    g().setSettings({ events: false, challenges: false, missions: false, elimination: true, laps: 1, voteStyle: 'group', intensity: 'normal', adult: false });
+    g().setSettings({ events: false, challenges: false, missions: false, elimination: true, laps: 1, voteStyle: 'group', intensity: 'normal', adult: false, impostors: 0, impTeam: false, mode: 'similar' });
   });
 
   const deal = () => {
     g().startRound();
     for (let i = 0; i < g().players.length; i++) g().dealNext();
   };
+
+  it('con muchos jugadores reparte varios impostores, cada uno con carta distinta (o la misma en equipo)', () => {
+    for (const n of ['Fer', 'Gabi', 'Hugo', 'Iris']) g().addPlayer(n);
+    expect(g().players).toHaveLength(9);
+    g().setSettings({ impostors: 0, impTeam: false, mode: 'similar' });
+    for (let i = 0; i < 15; i++) {
+      g().startRound();
+      const r = round();
+      expect(r.impostors).toHaveLength(3);
+      expect(r.declared).toBe(3);
+      expect(Object.keys(r.decoys).sort()).toEqual([...r.impostors].sort());
+      expect(new Set(Object.values(r.decoys)).size).toBe(3);
+      expect(Object.values(r.decoys)).not.toContain(r.civil);
+    }
+    g().setSettings({ impostors: 4, impTeam: true });
+    g().startRound();
+    expect(round().impostors).toHaveLength(4);
+    expect(round().team).toBe(true);
+    expect(new Set(Object.values(round().decoys)).size).toBe(1);
+    // Pedir más de los que caben se ajusta al máximo (9 jugadores → 4).
+    g().setSettings({ impostors: 8 });
+    g().startRound();
+    expect(round().impostors).toHaveLength(4);
+  });
+
+  it('sin eliminación se acusa a tantos como impostores haya', () => {
+    for (const n of ['Fer', 'Gabi']) g().addPlayer(n);
+    g().setSettings({ impostors: 2, elimination: false });
+    deal();
+    g().openVote();
+    g().vote(round().impostors, false);
+    expect(roundStatus(round()).over).toBe(true);
+    g().finishRound();
+    expect(round().result!.winner).toBe('civ');
+  });
 
   it('eliminación: echar a un inocente sigue la ronda con reloj más corto y sin su turno', () => {
     deal();
@@ -367,5 +438,51 @@ describe('partida completa en el store', () => {
     g().closeRoom();
     expect(g().online).toBe(false);
     expect(g().players).toHaveLength(5);
+  });
+
+  it('sala con jugadores sin teléfono: dos teléfonos alcanzan para cinco personas', () => {
+    g().openRoom({ id: 'host', name: 'Luis' });
+    g().joinPlayer('g1', 'Mar');
+    expect(g().addLocal('host', 'Ana')).toBe(true);
+    expect(g().addLocal('g1', 'Beto')).toBe(true);
+    expect(g().addLocal('g1', 'Caro')).toBe(true);
+    // Un id que no es un teléfono de la sala no puede sumar a nadie.
+    expect(g().addLocal('intruso', 'Zoe')).toBe(false);
+    const id = (n: string) => g().players.find((p) => p.name === n)!.id;
+    expect(g().players.find((p) => p.name === 'Beto')!.owner).toBe('g1');
+
+    // Desde otro teléfono no se puede actuar por alguien ajeno.
+    g().remote('g1', { a: 'avatar', as: id('Ana'), avatar: '🐲' });
+    expect(g().players.find((p) => p.name === 'Ana')!.avatar).not.toBe('🐲');
+    g().remote('g1', { a: 'avatar', as: id('Beto'), avatar: '🐲' });
+    expect(g().players.find((p) => p.name === 'Beto')!.avatar).toBe('🐲');
+    g().remote('g1', { a: 'addLocal', name: 'Dani' });
+    expect(g().players).toHaveLength(6);
+    g().remote('g1', { a: 'removeLocal', as: id('Dani') });
+    expect(g().players).toHaveLength(5);
+
+    g().startRound();
+    g().go('deal');
+    // g1 marca listos a los suyos; no puede marcar a Ana (es del anfitrión).
+    for (const n of ['Mar', 'Beto', 'Caro', 'Ana']) g().remote('g1', { a: 'ready', as: id(n) });
+    expect(round().ready.sort()).toEqual([id('Mar'), id('Beto'), id('Caro')].sort());
+    g().markReady(id('Ana'));
+    g().markReady('host');
+    expect(g().screen).toBe('discuss');
+
+    g().openVote();
+    const target = id('Luis');
+    for (const n of ['Mar', 'Beto', 'Caro']) g().remote('g1', { a: 'vote', as: id(n), target });
+    g().castVote(id('Ana'), target);
+    expect(g().screen).toBe('vote');
+    g().castVote('host', id('Mar'));
+    expect(g().screen).toBe('reveal');
+    expect(round().lastVote).toEqual([target]);
+
+    // Si se va un teléfono entre rondas, se van también quienes jugaban en él.
+    useGame.setState({ round: null });
+    g().removePlayer('g1');
+    expect(g().players.map((p) => p.name).sort()).toEqual(['Ana', 'Luis']);
+    g().closeRoom();
   });
 });

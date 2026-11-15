@@ -1,12 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { Emo } from '../components/Emo';
 import { useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { QR } from '../components/QR';
 import { Avatar, Button, IconButton, Sheet } from '../components/ui';
 import { levelFromXp } from '../engine/scoring';
 import { burst } from '../fx/fx';
-import { inviteUrl, kick, leaveRoom } from '../net/net';
-import { useNet, useSeat } from '../net/state';
+import { addLocalPlayer, changeAvatar, inviteUrl, kick, leaveRoom, removeLocalPlayer } from '../net/net';
+import { isHere, useNet, useSeat } from '../net/state';
 import { AVATAR_CHOICES, MAX_PLAYERS, resumeScreen, useGame } from '../store/game';
 
 const STATUS = {
@@ -19,12 +20,16 @@ const STATUS = {
 
 /** La sala: quién está, cómo invitar a más gente y, para el anfitrión, el botón de empezar. */
 export function Lobby() {
-  const { players, profiles, round, session, go, startRound, setAvatar } = useGame();
+  const { players, profiles, round, session, go, startRound } = useGame();
   const { code, status, present } = useNet();
-  const { me, host } = useSeat();
+  const { me, host, seats } = useSeat();
   const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const phones = players.filter((p) => !p.owner).length;
+  const nameOf = (id?: string) => players.find((p) => p.id === id)?.name;
   const st = STATUS[status];
   const url = code ? inviteUrl(code) : '';
   const hostPlayer = players[0];
@@ -94,7 +99,8 @@ export function Lobby() {
           <div className="stack" style={{ gap: 8 }}>
             <AnimatePresence initial={false}>
               {players.map((p, i) => {
-                const here = present.includes(p.id);
+                const here = isHere(p, present);
+                const mine = seats.includes(p.id);
                 return (
                   <motion.div
                     key={p.id}
@@ -106,8 +112,8 @@ export function Lobby() {
                     className="panel row"
                     style={{ padding: '10px 12px', borderColor: p.id === me ? p.color : undefined }}
                   >
-                    <motion.button whileTap={host ? { scale: 0.85 } : undefined} disabled={!host} onClick={() => setEditing(p.id)} aria-label={`Cambiar avatar de ${p.name}`}>
-                      <Avatar player={p} size={40} />
+                    <motion.button whileTap={host || mine ? { scale: 0.85 } : undefined} disabled={!host && !mine} onClick={() => setEditing(p.id)} aria-label={`Cambiar avatar de ${p.name}`}>
+                      <Avatar player={p} size={40} still={!here} />
                     </motion.button>
                     <div className="grow" style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 800, fontSize: 17, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -115,12 +121,19 @@ export function Lobby() {
                       </div>
                       <div className="dim" style={{ fontSize: 12, fontWeight: 700 }}>
                         {i === 0 ? '👑 Anfitrión · ' : ''}
+                        {p.owner ? `📱 En el teléfono de ${nameOf(p.owner) ?? '?'} · ` : ''}
                         {here ? `Nivel ${levelFromXp(profiles[p.id]?.xp ?? 0)}` : '📵 Desconectado'}
                         {session.scores[p.id] ? ` · ${session.scores[p.id]} pts` : ''}
                       </div>
                     </div>
-                    {host && i > 0 && !midRound && (
-                      <motion.button whileTap={{ scale: 0.8 }} onClick={() => kick(p.id)} className="icon-btn" style={{ width: 38, height: 38, fontSize: 16 }} aria-label={`Sacar a ${p.name}`}>
+                    {i > 0 && !midRound && (host || (mine && p.owner)) && (
+                      <motion.button
+                        whileTap={{ scale: 0.8 }}
+                        onClick={() => (p.owner ? removeLocalPlayer(p.id) : kick(p.id))}
+                        className="icon-btn"
+                        style={{ width: 38, height: 38, fontSize: 16 }}
+                        aria-label={`Sacar a ${p.name}`}
+                      >
                         ✕
                       </motion.button>
                     )}
@@ -128,6 +141,18 @@ export function Lobby() {
                 );
               })}
             </AnimatePresence>
+            {players.length < MAX_PLAYERS && (
+              <motion.button whileTap={{ scale: 0.97 }} className="panel row add-local" onClick={() => setAdding(true)}>
+                <span style={{ fontSize: 24 }}>➕</span>
+                <span className="grow" style={{ textAlign: 'left' }}>
+                  <b>Alguien juega en este teléfono</b>
+                  <small className="dim">Para quien no trae celular: verá su carta y votará pasando este teléfono.</small>
+                </span>
+              </motion.button>
+            )}
+            <div className="dim center" style={{ fontSize: 12 }}>
+              📱 {phones} {phones === 1 ? 'teléfono' : 'teléfonos'} · 👥 {players.length} jugadores · máximo {MAX_PLAYERS}
+            </div>
           </div>
         </div>
       </div>
@@ -158,9 +183,9 @@ export function Lobby() {
           </>
         ) : (
           <div className="panel center" style={{ gap: 6 }}>
-            <motion.div animate={{ scale: [1, 1.15, 1] }} transition={{ repeat: Infinity, duration: 1.6 }} style={{ fontSize: 34 }}>
-              ⏳
-            </motion.div>
+            <div style={{ fontSize: 34 }}>
+              <Emo e="⏳" />
+            </div>
             <b>{hostPlayer ? `${hostPlayer.name} dará inicio` : 'Entrando a la sala…'}</b>
             <span className="dim" style={{ fontSize: 13 }}>
               Deja esta pantalla abierta.
@@ -182,6 +207,30 @@ export function Lobby() {
         </Button>
       </Sheet>
 
+      <Sheet open={adding} onClose={() => setAdding(false)}>
+        <div className="h2">➕ Jugador en este teléfono</div>
+        <div className="dim" style={{ fontSize: 13.5, lineHeight: 1.45 }}>
+          Cuando le toque ver su carta, votar o adivinar, la app pedirá pasarle este teléfono. Así pueden jugar aunque haya menos celulares que personas.
+        </div>
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!newName.trim()) return;
+            addLocalPlayer(newName.trim());
+            sfx.select();
+            burst({ kind: 'sparks', count: 18, colors: ['#7c5cff', '#2ee6ff', '#fff'] });
+            setNewName('');
+            setAdding(false);
+          }}
+        >
+          <input value={newName} onChange={(e) => setNewName(e.target.value.slice(0, 16))} placeholder="Nombre" maxLength={16} enterKeyHint="done" className="field" autoFocus />
+          <Button type="submit" small style={{ width: 64, minHeight: 54, fontSize: 30 }} disabled={!newName.trim()}>
+            +
+          </Button>
+        </form>
+      </Sheet>
+
       <Sheet open={!!editing} onClose={() => setEditing(null)}>
         <div className="h2">Elige un avatar</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
@@ -190,7 +239,7 @@ export function Lobby() {
               key={a}
               whileTap={{ scale: 0.8 }}
               onClick={() => {
-                if (editing) setAvatar(editing, a);
+                if (editing) changeAvatar(editing, a);
                 sfx.select();
                 setEditing(null);
               }}

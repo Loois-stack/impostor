@@ -1,4 +1,6 @@
 import { AnimatePresence, animate, motion } from 'framer-motion';
+import { emojiRain } from '../fx/scene';
+import { Emo } from '../components/Emo';
 import { useEffect, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { Avatar, Button, Glitch } from '../components/ui';
@@ -40,6 +42,7 @@ export function Score() {
     const w = WIN_TXT[result.winner];
     (result.winner === 'imp' || result.winner === 'nobody-missed' ? sfx.impostor : sfx.fanfare).call(sfx);
     burst({ kind: 'confetti', colors: [w.c, '#fff', '#ffd23d'], count: 120, y: 120 });
+    emojiRain(result.winner === 'imp' || result.winner === 'nobody-missed' ? ['🔪', '😈', '🏆'] : ['🛡️', '🎉', '🏆', '⭐'], 22);
     haptic([30, 30, 30, 30, 80]);
     const list = [
       ...result.levelUps.map((id) => {
@@ -71,7 +74,7 @@ export function Score() {
     <div className="screen">
       <div className="center content" style={{ gap: 4, marginBottom: 14 }}>
         <motion.div initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 300, damping: 12 }} style={{ fontSize: 60 }}>
-          {w.e}
+          <Emo e={w.e} anim="jelly" />
         </motion.div>
         <div className="h1" style={{ fontSize: 'clamp(38px, 11vw, 54px)', color: w.c, textShadow: `0 0 30px ${w.c}88` }}>
           <Glitch text={w.t} />
@@ -109,7 +112,7 @@ export function Score() {
                   <div className="display" style={{ width: 26, fontSize: 26, color: i === 0 ? '#ffd23d' : 'var(--dim)' }}>
                     {i === 0 ? '👑' : i + 1}
                   </div>
-                  <Avatar player={p} size={40} />
+                  <Avatar player={p} size={40} mood={i === 0 ? 'happy' : undefined} />
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="row" style={{ gap: 6 }}>
                       <b style={{ fontSize: 16 }}>{p.name}</b>

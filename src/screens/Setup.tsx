@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Emo } from '../components/Emo';
 import { useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { Button, Segmented, Sheet, Toggle, TopBar } from '../components/ui';
@@ -6,6 +7,7 @@ import { BY_CAT, MIN_CUSTOM } from '../data';
 import { CATEGORIES, CUSTOM_CAT } from '../data/categories';
 import type { CategoryId } from '../data/types';
 import { INTENSITY, type Intensity } from '../engine/challenges';
+import { balanceOf, maxImpostors, recommendedImpostors, resolveImpostors, type Balance } from '../engine/roles';
 import { useSeat } from '../net/state';
 import { useGame } from '../store/game';
 
@@ -28,13 +30,97 @@ const VOTE_DESC = {
 
 const pct = (p: number) => `${Math.round(p * 100)} %`;
 
+const BALANCE: Record<Balance, { t: string; c: string }> = {
+  easy: { t: 'Fácil para los civiles', c: '#2ee6ff' },
+  fair: { t: 'Equilibrado', c: '#39ff88' },
+  hard: { t: 'Difícil para los civiles', c: '#ffb547' },
+  brutal: { t: 'Los impostores tienen ventaja', c: '#ff2e4d' },
+};
+
+/** Elegir cuántos impostores: automático según los jugadores o un número fijo. */
+function ImpostorPicker() {
+  const { settings, setSettings, players } = useGame();
+  const n = players.length;
+  const max = maxImpostors(n);
+  const rec = recommendedImpostors(n);
+  const k = resolveImpostors(settings.impostors, n);
+  const auto = settings.impostors === 0;
+  const bal = BALANCE[balanceOf(k, n)];
+  const set = (v: number) => {
+    sfx.select();
+    haptic(8);
+    setSettings({ impostors: Math.max(1, Math.min(max, v)) });
+  };
+  return (
+    <section className="stack" style={{ gap: 10 }}>
+      <div className="label">🔪 Impostores</div>
+      <div className="imp-picker">
+        <motion.button whileTap={{ scale: 0.85 }} className="icon-btn" disabled={k <= 1} onClick={() => set(k - 1)} aria-label="Menos impostores">
+          −
+        </motion.button>
+        <div className="imp-count">
+          <div className="imp-knives" aria-hidden>
+            {Array.from({ length: k }, (_, i) => (
+              <motion.span key={i} initial={{ scale: 0, rotate: -40 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 500, damping: 14 }}>
+                🔪
+              </motion.span>
+            ))}
+          </div>
+          <motion.div key={k} initial={{ scale: 1.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="display" style={{ fontSize: 44, lineHeight: 1 }}>
+            {k}
+          </motion.div>
+          <small className="dim">
+            {n} jugadores · {n - k} civiles
+          </small>
+        </div>
+        <motion.button whileTap={{ scale: 0.85 }} className="icon-btn" disabled={k >= max} onClick={() => set(k + 1)} aria-label="Más impostores">
+          +
+        </motion.button>
+      </div>
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        <motion.button
+          whileTap={{ scale: 0.94 }}
+          className="chip"
+          onClick={() => {
+            sfx.select();
+            setSettings({ impostors: auto ? k : 0 });
+          }}
+          style={{ borderColor: auto ? 'var(--accent)' : undefined, background: auto ? 'color-mix(in srgb, var(--accent) 22%, transparent)' : undefined }}
+        >
+          {auto ? '✓ ' : ''}🤖 Automático ({rec})
+        </motion.button>
+        <span className="chip" style={{ borderColor: bal.c }}>
+          <span className="dot" style={{ background: bal.c }} /> {bal.t}
+        </span>
+        <span className="chip dim">Máximo con {n}: {max}</span>
+      </div>
+      <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+        {k === 1
+          ? 'Un solo impostor contra todos. El clásico.'
+          : settings.impTeam
+            ? `Los ${k} impostores se conocen, tienen la misma carta y ganan juntos si sobrevive al menos uno.`
+            : `Cada impostor tiene una carta distinta y no sabe quiénes son los otros: ni entre ellos pueden confiarse.`}
+        {k >= 3 && !settings.elimination && ' Con tantos impostores conviene activar la Eliminación: se acusa de uno en uno.'}
+      </div>
+      {k > 1 && (
+        <Toggle
+          emoji="👥"
+          on={settings.impTeam}
+          onChange={(impTeam) => setSettings({ impTeam })}
+          title="Los impostores se conocen"
+          desc="Juegan en equipo: ven quiénes son sus compañeros y comparten carta. Si cae uno, los demás pueden salvar la ronda."
+        />
+      )}
+    </section>
+  );
+}
+
 export function Setup() {
-  const { settings, setSettings, players, session, go, startRound, newSession, customCards } = useGame();
+  const { settings, setSettings, session, go, startRound, newSession, customCards } = useGame();
   const { online } = useSeat();
   const [askAdult, setAskAdult] = useState(false);
   const allOn = CATEGORIES.every((c) => settings.cats.includes(c.id));
   const customOn = settings.cats.includes('custom') && customCards.length >= MIN_CUSTOM;
-  const canTwo = players.length >= 6;
   const lvl = INTENSITY[settings.intensity];
   const anyEvents = settings.events || settings.challenges || settings.missions;
 
@@ -48,7 +134,6 @@ export function Setup() {
 
   const start = (fresh: boolean) => {
     if (fresh) newSession();
-    if (!canTwo && settings.impostors === 2) setSettings({ impostors: 1 });
     sfx.whoosh();
     startRound();
   };
@@ -58,6 +143,8 @@ export function Setup() {
       <TopBar title="Reglas" onBack={() => go(online ? 'lobby' : 'players')} />
       <div className="scroll content">
         <div className="stack" style={{ gap: 20 }}>
+          <ImpostorPicker />
+
           <section className="stack" style={{ gap: 10 }}>
             <div className="row">
               <div className="label grow">Categorías · {settings.cats.filter((c) => c !== 'custom' || customOn).length}</div>
@@ -93,7 +180,7 @@ export function Setup() {
                       opacity: on ? 1 : 0.55,
                     }}
                   >
-                    <span style={{ fontSize: 24 }}>{c.emoji}</span>
+                    <span style={{ fontSize: 24 }}>{on ? <Emo e={c.emoji} /> : c.emoji}</span>
                     <span style={{ minWidth: 0 }}>
                       <b style={{ display: 'block', fontSize: 13.5, lineHeight: 1.15 }}>{c.name}</b>
                       <small className="dim" style={{ fontSize: 11 }}>
@@ -282,34 +369,20 @@ export function Setup() {
             />
           </section>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <section className="stack" style={{ gap: 8 }}>
-              <div className="label">Impostores</div>
-              <Segmented
-                id="imp"
-                value={canTwo ? settings.impostors : 1}
-                onChange={(impostors) => (canTwo || impostors === 1) && setSettings({ impostors })}
-                options={[
-                  { value: 1, label: '1' },
-                  { value: 2, label: canTwo ? '2' : '2 🔒' },
-                ]}
-              />
-            </section>
-            <section className="stack" style={{ gap: 8 }}>
-              <div className="label">Vueltas de pistas</div>
-              <Segmented
-                id="laps"
-                value={settings.laps}
-                onChange={(laps) => setSettings({ laps })}
-                options={[
-                  { value: 0, label: '∞' },
-                  { value: 1, label: '1' },
-                  { value: 2, label: '2' },
-                  { value: 3, label: '3' },
-                ]}
-              />
-            </section>
-          </div>
+          <section className="stack" style={{ gap: 8 }}>
+            <div className="label">Vueltas de pistas</div>
+            <Segmented
+              id="laps"
+              value={settings.laps}
+              onChange={(laps) => setSettings({ laps })}
+              options={[
+                { value: 0, label: '∞ Libre' },
+                { value: 1, label: '1' },
+                { value: 2, label: '2' },
+                { value: 3, label: '3' },
+              ]}
+            />
+          </section>
 
           <section className="stack" style={{ gap: 8 }}>
             <div className="label">Tiempo por turno</div>

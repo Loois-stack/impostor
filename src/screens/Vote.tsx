@@ -1,10 +1,11 @@
 import { AnimatePresence, motion, useAnimationControls } from 'framer-motion';
+import { Emo } from '../components/Emo';
 import { useEffect, useRef, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
-import { Avatar, Button, Glitch } from '../components/ui';
+import { Avatar, Button, Glitch, Handoff } from '../components/ui';
 import { NOBODY } from '../engine/vote';
 import { shake } from '../fx/fx';
-import { useNet, useSeat } from '../net/state';
+import { isHere, useNet, useSeat } from '../net/state';
 import { roundStatus, suspectsNeeded, useGame, type Player } from '../store/game';
 
 const HOLD_MS = 1100;
@@ -80,7 +81,7 @@ function Ballot({
                 className={`suspect ${on ? 'on' : ''} ${out ? 'out' : ''}`}
               >
                 <div className="suspect-photo">
-                  <Avatar player={p} size={62} style={out ? { filter: 'grayscale(1)' } : undefined} />
+                  <Avatar player={p} size={62} mood={on ? 'scared' : undefined} still={out} style={out ? { filter: 'grayscale(1)' } : undefined} />
                   {on && <motion.div className="crosshair" initial={{ scale: 2.4, opacity: 0, rotate: -90 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} />}
                 </div>
                 <b style={{ fontSize: 16 }}>{p.name}</b>
@@ -103,7 +104,7 @@ function Ballot({
           }}
           className={`suspect wide ${nobody ? 'on ghost' : ''}`}
         >
-          🫥 Creo que NO hay impostor
+          <Emo e="🫥" /> Creo que NO hay impostor
         </motion.button>
       </div>
 
@@ -150,7 +151,7 @@ function VotedStrip({ players, alive, votes, present }: { players: Player[]; ali
         return (
           <motion.div key={id} animate={{ opacity: ok ? 1 : 0.45, scale: ok ? 1.05 : 0.92 }} className="center" style={{ gap: 4, position: 'relative' }}>
             <Avatar player={p} size={46} />
-            <span className="badge">{ok ? '🗳️' : present && !present.includes(id) ? '📵' : '🤔'}</span>
+            <span className="badge">{ok ? '🗳️' : present && !isHere(p, present) ? '📵' : '🤔'}</span>
             <small style={{ fontSize: 11, fontWeight: 700 }}>{p.name}</small>
           </motion.div>
         );
@@ -164,18 +165,23 @@ export function Vote() {
   const players = useGame((s) => s.players);
   const settings = useGame((s) => s.settings);
   const { vote, castVote, closeVote } = useGame();
-  const { online, me, host } = useSeat();
+  const { online, me, host, seats } = useSeat();
   const present = useNet((s) => s.present);
   const { alive } = roundStatus(round);
-  const need = suspectsNeeded(round, players.length, settings.impostors);
+  const need = suspectsNeeded(round);
   const shown = round.order.map((id) => players.find((p) => p.id === id)!).filter(Boolean);
   const cast = Object.keys(round.votes).length;
 
   // --- Sala: cada quien vota en su teléfono ---
   if (online) {
-    const canVote = !!me && alive.includes(me);
-    const voted = !!me && !!round.votes[me];
-    if (canVote && !voted)
+    const myVoters = alive.filter((id) => seats.includes(id));
+    const canVote = myVoters.length > 0;
+    const pendingHere = myVoters.filter((id) => !round.votes[id]);
+    const voted = canVote && pendingHere.length === 0;
+    // Varios jugadores en este teléfono: votan pasándoselo, igual que en el modo de un teléfono.
+    if (pendingHere.length && (myVoters.length > 1 || pendingHere[0] !== me))
+      return <SecretPass players={players} shown={shown} alive={alive} voters={myVoters} />;
+    if (pendingHere.length)
       return (
         <div className="screen">
           <Header n={round.n} sub={round.elimination ? `Voto secreto. Quedan ${alive.length}: el más votado sale.` : 'Voto secreto: elige a tu sospechoso.'} />
@@ -186,10 +192,12 @@ export function Vote() {
       <div className="screen">
         <Header n={round.n} sub={`Han votado ${cast} de ${alive.length}`} />
         <div className="grow center content" style={{ gap: 22 }}>
-          <motion.div animate={{ rotate: [-6, 6, -6] }} transition={{ repeat: Infinity, duration: 1.8 }} style={{ fontSize: 70 }}>
-            {voted ? '🗳️' : canVote ? '🤔' : '👻'}
-          </motion.div>
-          <div className="h2">{voted ? 'Voto enviado' : !me || !round.order.includes(me) ? 'Solo observas esta ronda' : 'Estás fuera: ya no votas'}</div>
+          <div style={{ fontSize: 70 }}>
+            <Emo e={voted ? '🗳️' : canVote ? '🤔' : '👻'} anim={voted ? 'jelly' : undefined} />
+          </div>
+          <div className="h2">
+            {voted ? (myVoters.length > 1 ? 'Votos enviados' : 'Voto enviado') : !round.order.some((id) => seats.includes(id)) ? 'Solo observas esta ronda' : 'Estás fuera: ya no votas'}
+          </div>
           <VotedStrip players={players} alive={alive} votes={round.votes} present={present} />
         </div>
         {host && (
@@ -204,7 +212,7 @@ export function Vote() {
   }
 
   // --- Un teléfono, voto secreto: se pasa de mano en mano ---
-  if (settings.voteStyle === 'secret') return <SecretPass players={players} shown={shown} alive={alive} />;
+  if (settings.voteStyle === 'secret') return <SecretPass players={players} shown={shown} alive={alive} voters={alive} closeWhenDone />;
 
   // --- Un teléfono, decisión en grupo ---
   return (
@@ -218,21 +226,27 @@ export function Vote() {
   );
 }
 
-function SecretPass({ players, shown, alive }: { players: Player[]; shown: Player[]; alive: string[] }) {
+/**
+ * Voto secreto pasando el teléfono entre `voters`. Con un solo teléfono, al terminar se cuentan
+ * los votos (`closeWhenDone`); en sala, el anfitrión cierra cuando votaron todos los teléfonos.
+ */
+function SecretPass({ players, shown, alive, voters, closeWhenDone }: { players: Player[]; shown: Player[]; alive: string[]; voters: string[]; closeWhenDone?: boolean }) {
   const round = useGame((s) => s.round)!;
   const { castVote, closeVote } = useGame();
   const [open, setOpen] = useState(false);
-  const pending = alive.filter((id) => !round.votes[id]);
+  // Votos ya enviados desde aquí (en sala la confirmación del anfitrión puede tardar un instante).
+  const [sent, setSent] = useState<string[]>([]);
+  const pending = voters.filter((id) => !round.votes[id] && !sent.includes(id));
   const voter = players.find((p) => p.id === pending[0]);
-  const done = alive.length - pending.length;
+  const done = alive.filter((id) => round.votes[id] || sent.includes(id)).length;
 
   // Cuando ya votaron todos, un momento de suspenso y se cuentan.
   useEffect(() => {
-    if (voter) return;
+    if (voter || !closeWhenDone) return;
     sfx.drumroll(1.2);
     const t = setTimeout(() => closeVote(), 1300);
     return () => clearTimeout(t);
-  }, [voter, closeVote]);
+  }, [voter, closeVote, closeWhenDone]);
 
   return (
     <div className="screen">
@@ -243,7 +257,7 @@ function SecretPass({ players, shown, alive }: { players: Player[]; shown: Playe
             <motion.div animate={{ rotate: [0, -12, 12, 0] }} transition={{ repeat: Infinity, duration: 0.6 }} style={{ fontSize: 80 }}>
               🗳️
             </motion.div>
-            <div className="h2">Contando votos…</div>
+            <div className="h2">{closeWhenDone ? 'Contando votos…' : 'Votos enviados. Esperando a los demás…'}</div>
           </motion.div>
         ) : !open ? (
           <motion.div
@@ -255,8 +269,9 @@ function SecretPass({ players, shown, alive }: { players: Player[]; shown: Playe
             exit={{ x: -120, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 26 }}
           >
+            <Handoff />
             <div className="label">Pasa el teléfono a</div>
-            <Avatar player={voter} size={110} />
+            <Avatar player={voter} size={110} mood="happy" />
             <div className="h1" style={{ color: voter.color, textShadow: `0 0 30px ${voter.color}88` }}>
               {voter.name}
             </div>
@@ -283,6 +298,7 @@ function SecretPass({ players, shown, alive }: { players: Player[]; shown: Playe
               holdLabel={`✊ Mantén para votar, ${voter.name}`}
               onConfirm={(sel, nobody) => {
                 setOpen(false);
+                setSent((l) => [...l, voter.id]);
                 castVote(voter.id, nobody ? NOBODY : sel[0]);
               }}
             />

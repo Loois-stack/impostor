@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { Emo } from '../components/Emo';
 import { useMemo, useState, type CSSProperties } from 'react';
 import { sfx } from '../audio/sfx';
 import { EventCard } from '../components/EventCard';
@@ -91,7 +92,9 @@ export function Events() {
                     setPreview(e);
                   }}
                 >
-                  <span className="event-row-icon">{e.emoji}</span>
+                  <span className="event-row-icon">
+                    <Emo e={e.emoji} />
+                  </span>
                   <span className="grow" style={{ minWidth: 0 }}>
                     <b>{e.title}</b>
                     <small>{e.desc}</small>
@@ -130,7 +133,9 @@ export function Events() {
                     showDemo(k);
                   }}
                 >
-                  <span className="event-row-icon">{meta.emoji}</span>
+                  <span className="event-row-icon">
+                    <Emo e={meta.emoji} />
+                  </span>
                   <span className="grow" style={{ minWidth: 0 }}>
                     <b>{meta.label}</b>
                     <small>

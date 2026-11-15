@@ -1,4 +1,5 @@
 import { motion, useMotionTemplate, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { Emo, type Anim } from './Emo';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { BY_CAT } from '../data';
 import { CAT } from '../data/categories';
@@ -30,6 +31,9 @@ const PATTERN: Record<CategoryId, string> = {
   custom: 'bokeh',
 };
 
+/** Cómo se mueve el emoji de las cartas sin foto, según el estilo de su categoría. */
+const ART_ANIM: Record<string, Anim> = { halftone: 'jelly', scratch: 'flicker', speed: 'pulse', film: 'swing', pixel: 'hop', spot: 'pulse', bokeh: 'float' };
+
 export function CardArt({ item, cat }: { item: Item | null; cat: CategoryId }) {
   const c = CAT[cat];
   const url = item ? imageFor(item) : null;
@@ -46,9 +50,7 @@ export function CardArt({ item, cat }: { item: Item | null; cat: CategoryId }) {
           {PATTERN[cat] === 'rays' ? <div className="rays" /> : <div className={`pat pat-${PATTERN[cat]}`} />}
           <div className="watermark">{item?.name ?? '???'}</div>
           <div className="fallback" style={{ filter: `drop-shadow(0 0 28px ${c.color}aa) drop-shadow(0 12px 24px rgba(0,0,0,.5))` }}>
-            <span className="float" style={{ display: 'inline-block' }}>
-              {item ? item.emoji : '❓'}
-            </span>
+            <Emo e={item ? item.emoji : '❓'} anim={ART_ANIM[PATTERN[cat]] ?? 'float'} />
           </div>
         </>
       )}
@@ -96,11 +98,11 @@ function Dossier({ item }: { item: Item }) {
 }
 
 export interface CardNote {
-  kind: 'accomplice' | 'detective' | 'jester';
+  kind: 'accomplice' | 'detective' | 'jester' | 'team';
   text: string;
 }
 
-const NOTE_META: Record<CardNote['kind'], { icon: string; title: string; cls: string }> = {
+const NOTE_META: Record<Exclude<CardNote['kind'], 'team'>, { icon: string; title: string; cls: string }> = {
   accomplice: { icon: '🤝', title: 'Eres el cómplice', cls: 'ally' },
   detective: { icon: '🔎', title: 'Eres el detective', cls: 'det' },
   jester: { icon: '🃏', title: 'Eres el bufón', cls: 'jest' },
@@ -164,7 +166,7 @@ export function CardFront({
             {ms.text}
           </div>
         )}
-        {note && (
+        {note && note.kind !== 'team' && (
           <RoleBanner cls={NOTE_META[note.kind].cls} icon={NOTE_META[note.kind].icon} title={NOTE_META[note.kind].title}>
             {note.text}
           </RoleBanner>
@@ -175,13 +177,13 @@ export function CardFront({
           </RoleBanner>
         )}
         {role === 'imp' && (
-          <RoleBanner cls="imp" icon="🔪" title="Eres el impostor" glitch>
-            Los demás tienen algo <u>parecido</u>, no igual. ¡Camúflate!
+          <RoleBanner cls="imp" icon={note?.kind === 'team' ? '👥' : '🔪'} title={note?.kind === 'team' ? 'Equipo impostor' : 'Eres el impostor'} glitch>
+            {note?.kind === 'team' ? note.text : <>Los demás tienen algo <u>parecido</u>, no igual. ¡Camúflate!</>}
           </RoleBanner>
         )}
         {hidden && (
-          <RoleBanner cls="imp" icon="🔪" title="Eres el impostor" glitch>
-            No sabes la carta. Solo conoces {topic ? 'el tema' : 'la categoría'}: <strong>{topic ?? c.name}</strong>. Escucha, imita y sobrevive.
+          <RoleBanner cls="imp" icon="🔪" title={note?.kind === 'team' ? 'Equipo impostor' : 'Eres el impostor'} glitch>
+            No sabes la carta. Solo conoces {topic ? 'el tema' : 'la categoría'}: <strong>{topic ?? c.name}</strong>. {note?.kind === 'team' ? note.text : 'Escucha, imita y sobrevive.'}
           </RoleBanner>
         )}
       </div>

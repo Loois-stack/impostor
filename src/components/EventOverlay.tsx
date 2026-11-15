@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { Emo } from './Emo';
 import { useEffect, type CSSProperties } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { CH_BY_ID, KIND_META } from '../data/challenges';
@@ -60,7 +61,7 @@ export function EventOverlay({
       >
         <div className="center" style={{ gap: 6 }}>
           <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.45, type: 'spring', stiffness: 320, damping: 12 }}>
-            <Avatar player={player} size={64} />
+            <Avatar player={player} size={64} mood="happy" />
           </motion.div>
           <div className="label" style={{ color: '#fff' }}>
             Le tocó a
@@ -70,7 +71,7 @@ export function EventOverlay({
           </div>
         </div>
         <div className="label" style={{ color: meta.color }}>
-          {meta.emoji} {meta.label}
+          <Emo e={meta.emoji} size={16} /> {meta.label}
         </div>
         <div style={{ fontSize: 21, lineHeight: 1.35, fontWeight: 800 }}>{ch.text}</div>
         <div className="row" style={{ gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>

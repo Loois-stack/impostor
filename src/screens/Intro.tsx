@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { EVENT_SCENE, emojiRain } from '../fx/scene';
 import { useEffect, useMemo, useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { EventCard } from '../components/EventCard';
@@ -54,7 +55,7 @@ export function Intro() {
   }, [round.n]);
 
   useEffect(() => {
-    preload([BY_ID[round.civil], round.decoy ? BY_ID[round.decoy] : null]);
+    preload([BY_ID[round.civil], ...Object.values(round.decoys ?? {}).map((id) => BY_ID[id]), round.decoy ? BY_ID[round.decoy] : null]);
     sfx.riser(4.2);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -66,6 +67,8 @@ export function Intro() {
     flash(target.color, 500, 0.45);
     shake(10, 400);
     burst({ kind: 'confetti', colors: [target.color, target.color2, '#fff'], count: 90, y: window.innerHeight * 0.4 });
+    const landed = entries.find((e) => e.id === target.id);
+    if (landed) emojiRain([landed.emoji], 14);
   };
 
   useEffect(() => {
@@ -77,6 +80,8 @@ export function Intro() {
       flash(event.color, 600, 0.55);
       shake(16, 600);
       burst({ kind: 'sparks', colors: ['#fff', event.color, '#7c5cff'], count: 70 });
+      // Cada evento llega con su propia lluvia (los secretos, con signos de interrogación).
+      emojiRain(!event.id ? ['❓', '🤫', '❔'] : (EVENT_SCENE[event.id] ?? ['⚡', '✨']).concat(event.emoji, event.emoji), 28);
     }, 1700);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

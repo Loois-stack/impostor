@@ -74,11 +74,14 @@ function levelOrder(first: Level, rng: Rng): Level[] {
 }
 
 /** Señuelo del impostor: parecido pero no igual. El nivel decide si puede camuflarse o tiene que jugársela. */
-export function pickDecoy(civil: Item, sim: Similarity, h: History, rng: Rng): { decoy: Item; level: Level } {
+export function pickDecoy(civil: Item, sim: Similarity, h: History, rng: Rng, exclude: Set<string> = new Set()): { decoy: Item; level: Level } {
   const [p1, p2] = LEVEL_DIST[sim];
   const r = rng.next();
   const first: Level = r < p1 ? 1 : r < p1 + p2 ? 2 : 3;
-  const cands = decoyCandidates(civil);
+  const all = decoyCandidates(civil);
+  // Con varios impostores, cada uno recibe una carta distinta (si alcanzan las cartas).
+  const free = { 1: all[1].filter((i) => !exclude.has(i.id)), 2: all[2].filter((i) => !exclude.has(i.id)), 3: all[3].filter((i) => !exclude.has(i.id)) };
+  const cands = free[1].length + free[2].length + free[3].length ? free : all;
   const used = new Set(h.pairs);
   const freshness = (i: Item) => {
     const last = Math.max(h.itemUse[i.id]?.[1] ?? -99, h.decoyUse[i.id] ?? -99);
@@ -95,6 +98,18 @@ export function pickDecoy(civil: Item, sim: Similarity, h: History, rng: Rng): {
   throw new Error(`Sin señuelos para ${civil.id}`);
 }
 
+/** Una carta distinta por impostor, todas parecidas a la de los civiles. */
+export function pickDecoys(civil: Item, sim: Similarity, h: History, rng: Rng, count: number): { decoy: Item; level: Level }[] {
+  const out: { decoy: Item; level: Level }[] = [];
+  const taken = new Set<string>();
+  for (let i = 0; i < count; i++) {
+    const d = pickDecoy(civil, sim, h, rng, taken);
+    out.push(d);
+    taken.add(d.decoy.id);
+  }
+  return out;
+}
+
 /** Modo Mezcla: tema con más tiempo sin salir, nunca el mismo dos veces seguidas. */
 export function pickTheme(h: History, rng: Rng): Theme {
   const pool = THEMES.filter((t) => t.id !== h.lastTheme);
@@ -105,25 +120,33 @@ export function pickTheme(h: History, rng: Rng): Theme {
  * Carta civil y señuelo del mismo tema, preferentemente de categorías distintas
  * (Pennywise vs. el Joker). Evita cartas recientes y parejas ya jugadas.
  */
-export function pickFromTheme(theme: Theme, h: History, rng: Rng): { civil: Item; decoy: Item; level: Level } {
+export function pickFromTheme(theme: Theme, h: History, rng: Rng, count = 1): { civil: Item; decoy: Item; level: Level; decoys: Item[] } {
   const items = theme.items.map((id) => BY_ID[id]).filter(Boolean);
   const since = (i: Item) => h.round - Math.max(h.itemUse[i.id]?.[1] ?? -999, h.decoyUse[i.id] ?? -999);
   const civil = rng.weighted(items, (i) => (since(i) < 25 ? 0.05 : 1));
   const others = items.filter((i) => i.id !== civil.id);
-  const cross = others.filter((i) => i.cat !== civil.cat);
-  const pool = cross.length ? cross : others;
   const used = new Set(h.pairs);
-  const fresh = pool.filter((d) => !used.has(pairKey(civil.id, d.id)));
-  const decoy = rng.weighted(fresh.length ? fresh : pool, (d) => (since(d) < 10 ? 0.2 : 1));
-  return { civil, decoy, level: civil.sim.find((s) => s.id === decoy.id)?.level ?? 2 };
+  const decoys: Item[] = [];
+  for (let k = 0; k < count; k++) {
+    // Primero cartas de otras categorías y sin repetir pareja; si se acaban, lo que quede del tema.
+    const left = others.filter((i) => !decoys.includes(i));
+    const base = left.length ? left : others;
+    const cross = base.filter((i) => i.cat !== civil.cat);
+    const pool = cross.length ? cross : base;
+    const fresh = pool.filter((d) => !used.has(pairKey(civil.id, d.id)));
+    decoys.push(rng.weighted(fresh.length ? fresh : pool, (d) => (since(d) < 10 ? 0.2 : 1)));
+  }
+  const decoy = decoys[0];
+  return { civil, decoy, decoys, level: civil.sim.find((s) => s.id === decoy.id)?.level ?? 2 };
 }
 
-export function commitRound(h: History, cat: CategoryId, civil: Item, decoy: Item | null, themeId?: string): History {
+export function commitRound(h: History, cat: CategoryId, civil: Item, decoy: Item | Item[] | null, themeId?: string): History {
   const round = h.round + 1;
   const catPlays = { ...h.catPlays, [cat]: (h.catPlays[cat] ?? 0) + 1 };
   const itemUse = { ...h.itemUse, [civil.id]: [catPlays[cat]!, round] as [number, number] };
-  const decoyUse = decoy ? { ...h.decoyUse, [decoy.id]: round } : h.decoyUse;
-  const pairs = decoy ? [...h.pairs, pairKey(civil.id, decoy.id)] : h.pairs;
+  const decoys = [...new Set(decoy ? (Array.isArray(decoy) ? decoy : [decoy]) : [])];
+  const decoyUse = { ...h.decoyUse, ...Object.fromEntries(decoys.map((d) => [d.id, round])) };
+  const pairs = [...h.pairs, ...decoys.map((d) => pairKey(civil.id, d.id))];
   return {
     ...h,
     round,

@@ -18,6 +18,8 @@ export interface RoundOutcome {
   accomplice?: string;
   /** Civil que gana si lo acusan (evento "bufón"). */
   jester?: string;
+  /** Los impostores juegan en equipo: si sobrevive uno, ganan todos. */
+  team?: boolean;
 }
 
 export type Winner = 'civ' | 'imp' | 'partial' | 'nobody-found' | 'nobody-missed';
@@ -31,7 +33,6 @@ export interface ScoreLine {
 
 export const PTS = {
   civCatchAll: 100,
-  civCatchSome: 50,
   /** Modo eliminación: cada inocente que echaron por error le resta esto al premio de los civiles. */
   civPerMistake: 25,
   civMin: 25,
@@ -39,6 +40,8 @@ export const PTS = {
   impSurviveBlind: 300,
   impGuess: 150,
   impNobodyVote: 300,
+  /** Modo equipo: impostor atrapado cuyo equipo sobrevivió. */
+  impTeamWin: 100,
   /** Por cada inocente eliminado gracias al impostor (modo eliminación). */
   impPerInnocent: 50,
   nobodyFound: 150,
@@ -89,17 +92,24 @@ export function scoreRound(o: RoundOutcome): { winner: Winner; lines: ScoreLine[
             lines[p].base += PTS.impPerInnocent * innocentsOut;
             lines[p].reasons.push(`Hizo caer a ${innocentsOut} inocente${innocentsOut > 1 ? 's' : ''}`);
           }
-        } else if (o.guessed[p]) {
-          lines[p].base += PTS.impGuess;
-          lines[p].reasons.push('Atrapado, pero adivinó la carta');
+        } else {
+          if (o.team && caught.length < o.impostors.length) {
+            lines[p].base += PTS.impTeamWin;
+            lines[p].reasons.push('Cayó, pero su equipo sobrevivió');
+          }
+          if (o.guessed[p]) {
+            lines[p].base += PTS.impGuess;
+            lines[p].reasons.push('Atrapado, pero adivinó la carta');
+          }
         }
       } else if (caught.length === o.impostors.length) {
         const mistakes = innocentsOut - (o.jester && o.accused.includes(o.jester) ? 1 : 0);
         lines[p].base += Math.max(PTS.civMin, PTS.civCatchAll - PTS.civPerMistake * mistakes);
         lines[p].reasons.push(mistakes ? `Atraparon al impostor (tras ${mistakes} error${mistakes > 1 ? 'es' : ''})` : 'Atraparon al impostor');
       } else if (caught.length) {
-        lines[p].base += PTS.civCatchSome;
-        lines[p].reasons.push('Atraparon a un impostor');
+        // Premio parcial proporcional a los impostores atrapados (de 5 en 5).
+        lines[p].base += Math.round((PTS.civCatchAll * caught.length) / o.impostors.length / 5) * 5;
+        lines[p].reasons.push(`Atraparon ${caught.length} de ${o.impostors.length} impostores`);
       }
     }
   }

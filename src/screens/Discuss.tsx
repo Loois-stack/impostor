@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { Emo } from '../components/Emo';
 import { useEffect, useState, type CSSProperties } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { EventCard } from '../components/EventCard';
@@ -11,7 +12,7 @@ import { THEME_BY_ID } from '../data/themes';
 import { ACCENT_BY_ID } from '../engine/events';
 import { burst, flash, shake } from '../fx/fx';
 import { now } from '../net/clock';
-import { useNet, useSeat } from '../net/state';
+import { isHere, useNet, useSeat } from '../net/state';
 import { activeTurnEvent, isLastTurn, useGame, type Player } from '../store/game';
 import { shownEvent } from '../store/view';
 
@@ -159,7 +160,7 @@ export function Discuss() {
   const adult = useGame((s) => s.settings.adult);
   const { nextTurn, dismissChallenge, toggleCursed, go, setModerator, openVote } = useGame();
   const moderatorId = useGame((s) => s.session.moderator);
-  const { online, me, host } = useSeat();
+  const { online, me, host, seats } = useSeat();
   const present = useNet((s) => s.present);
   const [sheet, setSheet] = useState<'cursed' | 'event' | 'menu' | 'pickMod' | 'pickPeek' | null>(null);
   const [peek, setPeek] = useState<string | null>(null);
@@ -178,9 +179,11 @@ export function Discuss() {
   const pending = round.pendingChallenge === pid && !needsModerator;
   const turnEv = pending ? undefined : activeTurnEvent(round, pid);
   const judge = host && turnEv && !turnEv.round;
-  const myTurn = online && me === pid;
+  // En sala: el turno es "mío" si es de este teléfono (yo o alguien que juega en él).
+  const myTurn = online && seats.includes(pid);
+  const myRoundSeats = round.order.filter((id) => seats.includes(id) && !round.accused.includes(id));
   const last = isLastTurn(round);
-  const playing = !online || (!!me && round.order.includes(me));
+  const playing = !online || myRoundSeats.length > 0;
   // Efectos públicos que duran toda la ronda (acentos, reglas…), de quien no está en turno.
   const effects = round.order.filter((id) => id !== pid && activeTurnEvent(round, id)?.round);
   const missions = Object.keys(round.missions).length;
@@ -253,9 +256,14 @@ export function Discuss() {
             className="chip"
             style={{ borderColor: event.color, background: `color-mix(in srgb, ${event.color} 18%, transparent)` }}
           >
-            {event.emoji} <b>{event.title}</b>
+            <Emo e={event.emoji} /> <b>{event.title}</b>
             {event.rule ? <span className="dim">· {event.rule}</span> : null}
           </motion.button>
+        )}
+        {(round.declared > 1 || round.hidden === 'mystery') && (
+          <div className="chip" style={{ borderColor: '#ff2e4d88' }}>
+            🔪 <b>×{round.declared}{round.hidden === 'mystery' ? '?' : ''}</b> <span className="dim">impostores{round.team ? ' en equipo' : ''}</span>
+          </div>
         )}
         {missions > 0 && (
           <div className="chip" title="Misiones secretas en juego">
@@ -266,7 +274,9 @@ export function Discuss() {
 
       {accent && (
         <motion.button whileTap={{ scale: 0.97 }} onClick={() => setSheet('event')} className="banner content" style={{ '--ev': '#19c37d' } as CSSProperties}>
-          <span style={{ fontSize: 22 }}>{accent.emoji}</span>
+          <span style={{ fontSize: 22 }}>
+            <Emo e={accent.emoji} anim="hop" />
+          </span>
           <span className="grow" style={{ textAlign: 'left' }}>
             <b>Todos hablan como {accent.name}</b>
             <small>{accent.how}</small>
@@ -276,7 +286,9 @@ export function Discuss() {
       )}
       {round.cursedWord && (
         <motion.button whileTap={{ scale: 0.97 }} onClick={() => setSheet('cursed')} className="banner content" style={{ '--ev': '#ff2e4d' } as CSSProperties}>
-          <span style={{ fontSize: 22 }}>☠️</span>
+          <span style={{ fontSize: 22 }}>
+            <Emo e="☠️" />
+          </span>
           <span className="grow" style={{ textAlign: 'left' }}>
             <b>
               Palabra maldita: <span style={{ color: '#ff5470' }}>“{round.cursedWord}”</span>
@@ -292,7 +304,7 @@ export function Discuss() {
           const done = i < round.turn;
           const out = round.accused.includes(id);
           const ev = activeTurnEvent(round, id);
-          const off = online && !present.includes(id);
+          const off = online && !isHere(p, present);
           return (
             <motion.div
               key={id}
@@ -327,14 +339,14 @@ export function Discuss() {
             exit={{ x: -200, opacity: 0, rotateY: 40 }}
             transition={{ type: 'spring', stiffness: 240, damping: 24 }}
           >
-            <div className="label">{myTurn ? '¡Es tu turno!' : 'Turno de'}</div>
+            <div className="label">{myTurn ? (pid === me ? '¡Es tu turno!' : 'Turno de (en tu teléfono)') : 'Turno de'}</div>
             <div style={{ position: 'relative', width: 144, height: 144, display: 'grid', placeItems: 'center' }}>
               <motion.div
                 animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.15, 0.5] }}
                 transition={{ repeat: Infinity, duration: 2 }}
                 style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: player.color, filter: 'blur(20px)' }}
               />
-              <Avatar player={player} size={120} />
+              <Avatar player={player} size={120} mood={pending ? undefined : 'talk'} />
               {round.timer > 0 && !pending && <TurnTimer seconds={round.timer} turnKey={turnKey} />}
             </div>
             <div className="h1" style={{ color: player.color, textShadow: `0 0 30px ${player.color}88`, marginTop: round.timer ? 18 : 0 }}>
@@ -349,7 +361,7 @@ export function Discuss() {
                 style={{ '--ev': KIND_META[turnEv.kind].color } as CSSProperties}
               >
                 <div className="label" style={{ color: KIND_META[turnEv.kind].color }}>
-                  ⚡ Evento especial · {KIND_META[turnEv.kind].emoji} {KIND_META[turnEv.kind].label}
+                  ⚡ Evento especial · <Emo e={KIND_META[turnEv.kind].emoji} size={14} /> {KIND_META[turnEv.kind].label}
                 </div>
                 <div style={{ fontSize: 16, lineHeight: 1.35, fontWeight: 800 }}>{turnEv.text}</div>
                 <div className="dim" style={{ fontSize: 11.5 }}>
@@ -421,15 +433,15 @@ export function Discuss() {
             </div>
           )
         ) : myTurn ? (
-          <Button onClick={() => pass()}>Terminé mi turno ➜</Button>
+          <Button onClick={() => pass()}>{pid === me ? 'Terminé mi turno ➜' : `Terminó ${player.name} ➜`}</Button>
         ) : (
           <div className="dim center" style={{ fontWeight: 700, minHeight: 44 }}>
             Escucha la pista de {player.name}…
           </div>
         )}
         {online && playing && (
-          <Button variant="ghost" small onClick={() => setPeek(me!)}>
-            🃏 Ver mi carta
+          <Button variant="ghost" small onClick={() => (myRoundSeats.length > 1 ? setSheet('pickPeek') : setPeek(myRoundSeats[0]))}>
+            🃏 {myRoundSeats.length > 1 ? 'Ver una carta de este teléfono' : 'Ver mi carta'}
           </Button>
         )}
       </div>
@@ -442,7 +454,7 @@ export function Discuss() {
             challengeId={round.challenges[pid]}
             onAccept={dismissChallenge}
             canAccept={host || myTurn}
-            mine={myTurn}
+            mine={online && pid === me}
           />
         )}
       </AnimatePresence>
@@ -492,7 +504,9 @@ export function Discuss() {
         {timeUp && (
           <Overlay z={46} tint="rgba(40,0,10,.88)">
             <motion.div initial={{ scale: 3, rotate: -15 }} animate={{ scale: 1, rotate: -4 }} transition={{ type: 'spring', stiffness: 300, damping: 12 }} className="center" style={{ gap: 12 }}>
-              <div style={{ fontSize: 80 }}>⏰</div>
+              <div style={{ fontSize: 80 }}>
+                <Emo e="⏰" anim="shake" />
+              </div>
               <div className="h1" style={{ color: '#ff2e4d', textShadow: '0 0 30px #ff2e4d' }}>
                 <Glitch text="¡SE ACABÓ EL TIEMPO!" hard />
               </div>
@@ -565,7 +579,7 @@ export function Discuss() {
           Pásale el teléfono: solo esa persona debe ver la pantalla.
         </div>
         <PlayerGrid
-          players={round.order.filter((id) => !round.accused.includes(id)).map(P)}
+          players={(online ? myRoundSeats : round.order.filter((id) => !round.accused.includes(id))).map(P)}
           onPick={(id) => {
             setSheet(null);
             setPeek(id);

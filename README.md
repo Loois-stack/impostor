@@ -4,6 +4,8 @@ Juego de fiesta en español. Todos reciben la misma carta… menos el impostor, 
 
 - **836 cartas** en 15 categorías (memes, creepypastas, SCP, terror, caricaturas, anime, videojuegos, cine, series, famosos, objetos, comida, animales…), cada una con imagen y contexto. "Mis cartas": crea las tuyas con foto.
 - **Varios teléfonos**: un jugador crea una sala y los demás entran con un código de 4 letras o escaneando un QR. Cada quien ve su carta en privado, pasa su propio turno y vota en secreto. Si alguien recarga o se le va la señal, vuelve a entrar solo.
+- **Hasta 20 jugadores**, con o sin teléfono cada uno: en una sala, cualquier teléfono puede sumar a quien no trae celular. Esa persona ve su carta y vota pasándose ese teléfono, así que bastan 2 teléfonos (o incluso uno solo como anfitrión) para jugar en sala.
+- **Impostores sin límite fijo**: en automático hay 1 con hasta 5 jugadores, 2 con hasta 8, 3 con hasta 11, 4 con hasta 15 y 5 con más; o eliges el número, siempre con más civiles que impostores. Cada impostor recibe una carta distinta y no sabe quiénes son los otros, salvo en **modo equipo**, donde se conocen, comparten carta y ganan juntos.
 - **Eventos de ronda** (14): doble impostor, impostor a ciegas, cómplice, detective, bufón, **fiesta mexicana**, cine mudo, ronda dorada, susurros… Algunos se juegan **en secreto** y se revelan al final.
 - **Eventos especiales de turno** (95, más 10 del modo +18): voces, **acentos mexicanos** (norteño, chilango, fresa, yucateco, tianguis, lucha libre…), restricciones, actuación y caos. La app anuncia a quién le tocó, lo muestra durante su turno y **se quita al pasar al siguiente jugador**, donde se califica si lo cumplió.
 - **Misiones secretas** (19): llegan escritas en tu carta y nadie más sabe que existen.
@@ -12,11 +14,18 @@ Juego de fiesta en español. Todos reciben la misma carta… menos el impostor, 
 - **Eliminación** revisada: el reloj se acorta en cada nueva búsqueda, cada inocente echado por error baja el premio y los eliminados ya no hablan ni votan.
 - **Votación** en grupo o en secreto (pasando el teléfono, o cada quien en el suyo), con conteo animado y empates.
 - Ruleta de verdad, cartas con marco por categoría, tres **temas visuales** (Neón, Fiesta, Casino), música generada en vivo, puntos, rachas, niveles, logros y "Premios de la noche".
+- **Todo se mueve**: avatares que respiran, hablan en su turno, tiemblan cuando los acusan y saltan cuando ganan; emojis con personalidad; escenas de fondo según la categoría o el evento (la fiesta mexicana trae tacos, chiles, piñatas y trompetas); títulos que barren la pantalla al cambiar de fase; lluvias de emojis en los momentos clave y **reacciones** (😂😱🤔🔪…) que en sala ven todos los teléfonos.
 - App instalable (PWA) que funciona **sin internet** con un solo teléfono: fuentes y sonidos van dentro de la app, y las fotos se pueden descargar desde Ajustes.
 
 ### Eventos seguros
 
 Los eventos están hechos para reírse, no para arriesgarse: ninguno pide alcohol, comer o beber algo, golpes, correr, contacto obligado, usar el teléfono de otro ni exponer la vida privada de nadie. El modo +18 solo agrega groserías. Hay una prueba automática (`src/engine/events.test.ts`) que revisa estas reglas en cada evento; si agregas uno nuevo, sigue las reglas escritas al inicio de `src/data/challenges.ts`.
+
+## Instalar en tu celular
+
+1. Abre **https://loois-stack.github.io/impostor/** en el celular.
+2. Android (Chrome): menú ⋮ → *Instalar app* o *Agregar a pantalla principal*. iPhone (Safari): botón Compartir → *Agregar a inicio*.
+3. Queda como una app más, a pantalla completa. Se actualiza sola cuando hay una versión nueva.
 
 ## Jugar en tu PC
 

@@ -1,4 +1,6 @@
 import { motion } from 'framer-motion';
+import { emojiRain } from '../fx/scene';
+import { Emo } from '../components/Emo';
 import { useEffect } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { Avatar, Button, Glitch } from '../components/ui';
@@ -41,6 +43,7 @@ export function Awards() {
       sfx.fanfare();
       flash('#ffd23d', 600, 0.4);
       burst({ kind: 'confetti', count: 160, colors: ['#ffd23d', '#fff', '#ff5fc8', '#2ee6ff'], y: window.innerHeight * 0.4 });
+      emojiRain(['🏆', '👑', '🎉', '🥇', '⭐'], 34);
       haptic([40, 40, 40, 40, 200]);
     }, 1500);
     const t2 = awards.map((_, i) => setTimeout(() => sfx.coin(), 2400 + i * 350));
@@ -79,7 +82,7 @@ export function Awards() {
                       👑
                     </motion.div>
                   )}
-                  <Avatar player={p} size={place === 0 ? 70 : 56} />
+                  <Avatar player={p} size={place === 0 ? 70 : 56} mood={place === 0 ? 'happy' : undefined} />
                   <b style={{ fontSize: 14, maxWidth: 96, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</b>
                   <span className="display" style={{ fontSize: 22, color }}>
                     {session.scores[p.id] ?? 0}
@@ -117,7 +120,9 @@ export function Awards() {
               className="panel row"
               style={{ padding: '12px 14px', gap: 12 }}
             >
-              <div style={{ fontSize: 34 }}>{a.emoji}</div>
+              <div style={{ fontSize: 34 }}>
+                <Emo e={a.emoji} delay={-i * 0.4} />
+              </div>
               <div className="grow" style={{ minWidth: 0 }}>
                 <div className="display" style={{ fontSize: 22 }}>
                   {a.title}

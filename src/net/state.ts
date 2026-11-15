@@ -44,12 +44,19 @@ export function publicId(deviceId: string) {
 
 /**
  * Quién soy en esta partida.
- * - Un solo teléfono: no hay "yo"; quien lo sostiene controla todo.
- * - Sala: `me` es mi jugador y `host` dice si este teléfono dirige la partida.
+ * - Un solo teléfono: no hay "yo"; quien lo sostiene controla a todos.
+ * - Sala: `me` es mi jugador, `seats` son los jugadores que se manejan desde este teléfono
+ *   (yo y quienes juegan en él) y `host` dice si este teléfono dirige la partida.
  */
 export function useSeat() {
   const online = useGame((s) => s.online);
+  const players = useGame((s) => s.players);
   const role = useNet((s) => s.role);
   const deviceId = usePrefs((s) => s.deviceId);
-  return { online, me: online ? publicId(deviceId) : undefined, host: !online || role !== 'guest' };
+  const me = online ? publicId(deviceId) : undefined;
+  const seats = online ? players.filter((p) => p.id === me || p.owner === me).map((p) => p.id) : players.map((p) => p.id);
+  return { online, me, seats, host: !online || role !== 'guest' };
 }
+
+/** ¿Está conectado el teléfono de este jugador? */
+export const isHere = (p: { id: string; owner?: string }, present: string[]) => present.includes(p.owner ?? p.id);

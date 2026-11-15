@@ -4,10 +4,10 @@ import { haptic, sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
 import { PlayerCard } from '../components/PlayerCard';
 import { ShuffleDeck } from '../components/ShuffleDeck';
-import { Avatar, Button } from '../components/ui';
+import { Avatar, Button, Handoff } from '../components/ui';
 import { CAT } from '../data/categories';
 import { THEME_BY_ID } from '../data/themes';
-import { useNet, useSeat } from '../net/state';
+import { isHere, useNet, useSeat } from '../net/state';
 import { useGame } from '../store/game';
 
 export function Deal() {
@@ -85,9 +85,10 @@ function DealLocal() {
                 ×{remaining}
               </div>
             </div>
+            <Handoff />
             <div className="label">Pasa el teléfono a</div>
             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.15, type: 'spring', stiffness: 300, damping: 14 }}>
-              <Avatar player={player} size={120} />
+              <Avatar player={player} size={120} mood="happy" />
             </motion.div>
             <div className="h1" style={{ color: player.color, textShadow: `0 0 30px ${player.color}88` }}>
               {player.name}
@@ -140,29 +141,49 @@ function DealLocal() {
   );
 }
 
-/** Sala: cada quien ve su carta en su propio teléfono, todos al mismo tiempo. */
+/**
+ * Sala: cada quien ve su carta en su propio teléfono, todos al mismo tiempo. Si en un teléfono
+ * juegan varias personas, se lo van pasando como en el modo de un solo teléfono.
+ */
 function DealOnline() {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
   const { markReady, beginDiscuss } = useGame();
-  const { me, host } = useSeat();
+  const { me, host, seats } = useSeat();
   const present = useNet((s) => s.present);
   const [shuffling, setShuffling] = useState(round.ready.length === 0);
   const [seen, setSeen] = useState(false);
-  const playing = !!me && round.order.includes(me);
-  const ready = !!me && round.ready.includes(me);
+  const [open, setOpen] = useState(false);
+  // Marcados como listos en este teléfono (por si la confirmación del anfitrión tarda un momento).
+  const [sent, setSent] = useState<string[]>([]);
+  const mine = round.order.filter((id) => seats.includes(id));
+  const pending = mine.filter((id) => !round.ready.includes(id) && !sent.includes(id));
+  const current = pending[0];
+  const P = (id: string) => players.find((p) => p.id === id)!;
   const waiting = round.order.filter((id) => !round.ready.includes(id));
+  // A quien es dueño del teléfono se le muestra directo; a los demás, primero "pásale el teléfono".
+  const needsPass = !!current && (current !== me || mine.length > 1) && !open;
+
+  const done = () => {
+    if (!current) return;
+    sfx.whoosh();
+    haptic(15);
+    setSent((l) => [...l, current]);
+    setSeen(false);
+    setOpen(false);
+    markReady(current);
+  };
 
   return (
     <div className="screen">
       <div className="row content" style={{ justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         {round.order.map((id) => {
-          const p = players.find((x) => x.id === id)!;
+          const p = P(id);
           const ok = round.ready.includes(id);
           return (
             <motion.div key={id} animate={{ opacity: ok ? 1 : 0.45, scale: ok ? 1 : 0.9 }} style={{ position: 'relative' }}>
               <Avatar player={p} size={30} />
-              <span className="badge">{ok ? '✅' : present.includes(id) ? '👀' : '📵'}</span>
+              <span className="badge">{ok ? '✅' : isHere(p, present) ? '👀' : '📵'}</span>
             </motion.div>
           );
         })}
@@ -173,7 +194,7 @@ function DealOnline() {
           <motion.div key="shuffle" className="grow center content" exit={{ opacity: 0 }}>
             <ShuffleDeck onDone={() => setShuffling(false)} />
           </motion.div>
-        ) : !playing ? (
+        ) : !mine.length ? (
           <motion.div key="watch" className="grow center content" style={{ gap: 12 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div style={{ fontSize: 64 }}>🍿</div>
             <div className="h2">Entraste a media ronda</div>
@@ -181,19 +202,50 @@ function DealOnline() {
               Mira cómo se acusan entre ellos. Te toca carta en la siguiente ronda.
             </div>
           </motion.div>
+        ) : !current ? (
+          <motion.div key="ready" className="grow center content" style={{ gap: 12 }} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+            <motion.div animate={{ rotate: [0, -8, 8, 0] }} transition={{ repeat: Infinity, duration: 1.4 }} style={{ fontSize: 64 }}>
+              🃏
+            </motion.div>
+            <div className="h2">{mine.length > 1 ? 'Todos en este teléfono están listos' : '¡Listo!'}</div>
+            <div className="dim" style={{ maxWidth: 300, lineHeight: 1.45 }}>
+              Esperando a {waiting.length ? waiting.map((id) => P(id).name).join(', ') : 'todos'}…
+            </div>
+          </motion.div>
+        ) : needsPass ? (
+          <motion.div
+            key={`pass-${current}`}
+            className="grow center content"
+            style={{ gap: 16 }}
+            initial={{ x: 120, opacity: 0, rotate: 6 }}
+            animate={{ x: 0, opacity: 1, rotate: 0 }}
+            exit={{ x: -120, opacity: 0, rotate: -6 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+          >
+            {current !== me && <Handoff />}
+            <div className="label">{current === me ? 'Tu carta' : 'Pasa el teléfono a'}</div>
+            <Avatar player={P(current)} size={110} mood="happy" />
+            <div className="h1" style={{ color: P(current).color, textShadow: `0 0 30px ${P(current).color}88` }}>
+              {P(current).name}
+            </div>
+            <div className="dim" style={{ maxWidth: 300, lineHeight: 1.45 }}>
+              Que nadie más vea la pantalla. 🤫
+            </div>
+          </motion.div>
         ) : (
           <motion.div
-            key="card"
+            key={`card-${current}`}
             className="grow center content"
             style={{ gap: 14 }}
             initial={{ y: -420, opacity: 0, scale: 0.4, rotate: -25 }}
             animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
             transition={{ type: 'spring', stiffness: 220, damping: 24 }}
           >
-            <div className="dim" style={{ fontWeight: 700 }}>
-              Tu carta secreta · que nadie más la vea 🤫
+            <div className="row dim" style={{ fontWeight: 700, gap: 8 }}>
+              <Avatar player={P(current)} size={26} />
+              {current === me ? 'Tu carta secreta · que nadie más la vea 🤫' : `Carta de ${P(current).name} 🤫`}
             </div>
-            <PlayerCard playerId={me!} onSeen={() => setSeen(true)} />
+            <PlayerCard playerId={current} onSeen={() => setSeen(true)} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -205,24 +257,22 @@ function DealOnline() {
           </Button>
         ) : (
           <>
-            {playing &&
-              (ready ? (
-                <div className="dim center" style={{ fontWeight: 700 }}>
-                  ✅ Listo. Esperando a {waiting.length ? waiting.map((id) => players.find((p) => p.id === id)?.name).join(', ') : 'todos'}…
-                </div>
-              ) : (
+            {current &&
+              (needsPass ? (
                 <Button
-                  disabled={!seen}
                   onClick={() => {
-                    sfx.whoosh();
-                    haptic(15);
-                    markReady(me!);
+                    sfx.flip();
+                    setOpen(true);
                   }}
                 >
-                  {seen ? 'Ya la vi, listo ✔' : 'Primero mira tu carta'}
+                  Soy {P(current).name} 👀
+                </Button>
+              ) : (
+                <Button disabled={!seen} onClick={done}>
+                  {!seen ? 'Primero mira tu carta' : pending.length > 1 ? 'Listo, pasar ➜' : 'Ya la vi, listo ✔'}
                 </Button>
               ))}
-            {host && (ready || !playing) && waiting.length > 0 && (
+            {host && !current && waiting.length > 0 && (
               <Button variant="ghost" small onClick={() => beginDiscuss()}>
                 Empezar sin esperar ⏭
               </Button>

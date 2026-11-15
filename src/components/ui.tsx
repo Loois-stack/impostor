@@ -2,6 +2,7 @@ import { AnimatePresence, motion, type HTMLMotionProps } from 'framer-motion';
 import type { CSSProperties, ReactNode } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import type { Player } from '../store/game';
+import { Emo } from './Emo';
 
 type BtnProps = HTMLMotionProps<'button'> & { variant?: 'primary' | 'danger' | 'ghost' | 'plain'; small?: boolean; silent?: boolean };
 
@@ -54,6 +55,7 @@ export function TopBar({ title, onBack, right }: { title: ReactNode; onBack?: ()
 }
 
 export function Toggle({ on, onChange, title, desc, emoji }: { on: boolean; onChange: (v: boolean) => void; title: string; desc?: string; emoji?: string }) {
+  // Al encenderse, su emoji salta.
   return (
     <motion.button
       className="toggle"
@@ -66,7 +68,17 @@ export function Toggle({ on, onChange, title, desc, emoji }: { on: boolean; onCh
       role="switch"
       aria-checked={on}
     >
-      {emoji && <span style={{ fontSize: 26 }}>{emoji}</span>}
+      {emoji && (
+        <motion.span
+          key={String(on)}
+          initial={on ? { scale: 0.4, rotate: -30 } : false}
+          animate={{ scale: 1, rotate: 0, filter: on ? 'grayscale(0)' : 'grayscale(.7)' }}
+          transition={{ type: 'spring', stiffness: 500, damping: 12 }}
+          style={{ fontSize: 26, display: 'inline-block' }}
+        >
+          {on ? <Emo e={emoji} /> : emoji}
+        </motion.span>
+      )}
       <span className="t">
         <b>{title}</b>
         {desc && <small>{desc}</small>}
@@ -107,10 +119,31 @@ export function Segmented<T extends string | number>({
   );
 }
 
-export function Avatar({ player, size = 44, style }: { player: Player; size?: number; style?: CSSProperties }) {
+const seed = (id: string) => [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 997, 7);
+
+/**
+ * Avatar vivo: respira y parpadea solo. `mood` cambia su gesto: habla en su turno, tiembla si
+ * lo acusan, salta de gusto si gana. `still` lo deja quieto (eliminados, listas largas).
+ */
+export function Avatar({
+  player,
+  size = 44,
+  style,
+  mood,
+  still,
+}: {
+  player: Player;
+  size?: number;
+  style?: CSSProperties;
+  mood?: 'talk' | 'scared' | 'happy';
+  still?: boolean;
+}) {
   return (
-    <div className="avatar" style={{ '--c': player.color, width: size, height: size, fontSize: size * 0.55, ...style } as CSSProperties}>
-      {player.avatar}
+    <div
+      className={`avatar ${mood ?? ''} ${still || size < 26 ? 'still' : ''}`}
+      style={{ '--c': player.color, '--av-d': `${-(seed(player.id) % 36) / 10}s`, width: size, height: size, fontSize: size * 0.55, ...style } as CSSProperties}
+    >
+      <span className="av-face">{player.avatar}</span>
     </div>
   );
 }
@@ -143,6 +176,17 @@ export function Sheet({ open, onClose, children, z = 40 }: { open: boolean; onCl
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+/** Escena del teléfono pasando de una mano a otra. */
+export function Handoff() {
+  return (
+    <div className="handoff" aria-hidden>
+      <span className="hand l">🫱</span>
+      <span className="phone">📱</span>
+      <span className="hand r">🫲</span>
+    </div>
   );
 }
 
