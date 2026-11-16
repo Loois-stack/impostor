@@ -3096,3 +3096,289 @@ input {
   border-color: rgba(255, 84, 112, 0.7);
   background: linear-gradient(90deg, rgba(255, 46, 77, 0.2), rgba(255, 46, 77, 0.05));
 }
+
+/* ---------- Sala: llamada de voz ---------- */
+.voice-fab {
+  position: fixed;
+  left: 12px;
+  bottom: calc(var(--safe-b) + 140px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: bottom 0.3s ease, opacity 0.2s ease;
+}
+.app:has(.vc-bar) .voice-fab {
+  bottom: calc(var(--safe-b) + 228px);
+}
+.app:has(.sheet-back) .voice-fab,
+.app:has(.lc-intro) .voice-fab {
+  opacity: 0;
+  pointer-events: none;
+}
+.vf-main {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  background: color-mix(in srgb, var(--bg) 60%, #2a2140);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+.vf-main.on {
+  background: #146b45;
+  border-color: #39ff88;
+}
+.vf-main.off {
+  background: #4a1622;
+  border-color: #ff5470aa;
+}
+.vf-main.talking {
+  box-shadow: 0 0 0 4px #39ff88aa, 0 0 22px #39ff88;
+  animation: talk-pulse 0.6s ease-in-out infinite alternate;
+}
+.vf-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #39ff88;
+  color: #04140b;
+  font-size: 11px;
+  font-weight: 900;
+  display: grid;
+  place-items: center;
+}
+.vf-people {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--line);
+  color: #fff;
+}
+@keyframes talk-pulse {
+  from { box-shadow: 0 0 0 3px #39ff8888, 0 0 14px #39ff88; }
+  to { box-shadow: 0 0 0 6px #39ff8844, 0 0 26px #39ff88; }
+}
+.talk-ring {
+  border-radius: 50%;
+  transition: box-shadow 0.15s ease;
+}
+.talk-ring.talking {
+  box-shadow: 0 0 0 3px #39ff88, 0 0 14px #39ff88;
+}
+.mic-btn.on {
+  --accent: #1fbf6b;
+}
+.mic-btn.off {
+  --accent: #6b2a3a;
+}
+.call-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+.call-who {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 64px;
+}
+.call-who small {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.call-who > :first-child {
+  border-radius: 50%;
+  transition: box-shadow 0.15s ease;
+}
+.call-who.talking > :first-child {
+  box-shadow: 0 0 0 3px #39ff88, 0 0 16px #39ff88;
+}
+.call-mic {
+  position: absolute;
+  top: 26px;
+  right: 6px;
+  font-size: 13px;
+}
+
+/* ---------- Sala: reunión al terminar la vuelta ---------- */
+.meeting {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+.mt-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 45%, #3a2a00ee, #120a00f2 70%);
+  pointer-events: none;
+}
+.mt-title {
+  color: #ffd23f;
+  text-shadow: 0 0 30px #ffb300, 0 4px 0 #6b3d00;
+}
+.mt-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.mt-head b {
+  display: block;
+  font-size: 16px;
+}
+.mt-head small {
+  display: block;
+  font-size: 12.5px;
+  opacity: 0.75;
+  line-height: 1.35;
+}
+.mt-clock {
+  font-family: var(--display, inherit);
+  font-size: 22px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(255, 210, 63, 0.14);
+  color: #ffd23f;
+}
+.mt-clock.urgent {
+  background: rgba(255, 46, 77, 0.2);
+  color: #ff5470;
+  animation: talk-pulse 0.5s ease-in-out infinite alternate;
+}
+.mt-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.mt-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffd23f, #ff8a3d);
+}
+.mt-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 8px;
+  padding: 4px 0;
+}
+.mt-seat {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: 62px;
+}
+.mt-seat small {
+  font-size: 11.5px;
+  font-weight: 700;
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mt-seat > div {
+  border-radius: 50%;
+  transition: box-shadow 0.15s ease;
+}
+.mt-seat.talking > div {
+  box-shadow: 0 0 0 3px #39ff88, 0 0 18px #39ff88;
+}
+.mt-mic {
+  position: absolute;
+  left: -4px;
+  bottom: -2px;
+  font-size: 14px;
+}
+.mt-wants {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  border: 2px solid #0a0710;
+}
+.mt-wants.vote {
+  background: #ff2e4d;
+}
+.mt-wants.more {
+  background: #1fbf6b;
+}
+.mt-tally {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  gap: 8px;
+}
+.mt-tally .dim {
+  font-size: 11.5px;
+  text-align: center;
+}
+.vc-btn.more.on {
+  box-shadow: 0 0 0 3px #39ff88aa, 0 0 18px #39ff8866;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vf-main.talking,
+  .mt-clock.urgent {
+    animation: none;
+  }
+}
+
+/* ---------- Ajustes: grabar tu risa ---------- */
+.laugh-rec {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.rec-btn {
+  position: relative;
+  overflow: hidden;
+}
+.rec-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: rec-blink 0.8s ease-in-out infinite alternate;
+}
+.rec-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  background: #fff;
+  transition: width 0.1s linear;
+}
+@keyframes rec-blink {
+  from { opacity: 1; }
+  to { opacity: 0.2; }
+}

@@ -63,7 +63,7 @@ export function floatReaction(e: string, from?: string) {
 export function showReaction(e: string, from?: string, mine = !from) {
   floatReaction(e, from);
   const mode = usePrefs.getState().reactSound;
-  const played = (mode === 'all' || (mode === 'mine' && mine)) && reactionSound(e, from);
+  const played = (mode === 'all' || (mode === 'mine' && mine)) && reactionSound(e, from, false, mine);
   if (mine && !played) sfx.select();
 }
 

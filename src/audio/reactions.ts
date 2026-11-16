@@ -5,6 +5,8 @@
  * (`voicebox.ts`) con los guiones de `voices.ts`; cada jugador tiene su propia voz, la misma en
  * todos los teléfonos. Los efectos (navaja, bocina, tambor, trombón…) se arman con Web Audio.
  */
+import { usePrefs } from '../store/prefs';
+import { decodeLaugh, isLaugh, LAUGH_RATE, resample } from './myLaugh';
 import { sfx, type Kit } from './sfx';
 import { render, type Take } from './voicebox';
 import * as V from './voices';
@@ -509,6 +511,49 @@ if (typeof window !== 'undefined')
     else warm();
   }, 4000);
 
+// ---------------------------------------------------------------- Risas grabadas
+
+/** Sala: la risa grabada de cada teléfono (solo en memoria, mientras dure la sala). */
+const roomLaughs = new Map<string, string>();
+const decoded = new Map<string, Float32Array>();
+
+/** Sala: llegó (o se borró) la risa grabada de un teléfono. */
+export function setRoomLaugh(pid: string, d: string | null) {
+  if (d && isLaugh(d)) roomLaughs.set(pid, d);
+  else roomLaughs.delete(pid);
+}
+
+/** Para pruebas: de quién tenemos risa grabada. */
+export const roomLaughIds = () => [...roomLaughs.keys()];
+
+/** Al salir de la sala se olvidan las risas de los demás. */
+export const clearRoomLaughs = () => {
+  roomLaughs.clear();
+  decoded.clear();
+};
+
+/** Toca una risa grabada (un poquito distinta cada vez). */
+function playLaugh(k: Kit, d: string) {
+  let x = decoded.get(d);
+  if (!x) {
+    // Se sube a 24 kHz para que cualquier navegador la pueda tocar.
+    x = resample(decodeLaugh(d), LAUGH_RATE, 24000);
+    if (decoded.size > 30) decoded.clear();
+    decoded.set(d, x);
+  }
+  const buf = k.ctx.createBuffer(1, x.length, 24000);
+  buf.getChannelData(0).set(x);
+  const src = k.ctx.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = 0.95 + Math.random() * 0.12;
+  const g = k.ctx.createGain();
+  g.gain.value = 0.55;
+  src.connect(g);
+  output(k, g, 0.1);
+  src.start(k.ctx.currentTime + 0.01);
+  return x.length / 24000 / src.playbackRate.value;
+}
+
 let busy: { until: number }[] = [];
 const last = new Map<string, number>();
 
@@ -517,16 +562,22 @@ const last = new Map<string, number>();
  * suena igual en todos los teléfonos. En la sala pueden llegar muchas juntas: se tocan hasta 3 a
  * la vez y la misma no se repite antes de un cuarto de segundo. `preview` se salta el límite.
  */
-export function reactionSound(e: string, who?: string, preview = false): boolean {
+export function reactionSound(e: string, who?: string, preview = false, mine = !who): boolean {
   const k = sfx.kit();
   const name = BY_EMOJI[e];
   if (!k || !name) return false;
+  // Si quien se ríe grabó su risa, su 😂 suena con ella.
+  const recorded = e === '😂' ? (mine ? usePrefs.getState().laugh : who ? roomLaughs.get(who) : undefined) : undefined;
   const now = k.ctx.currentTime;
   busy = busy.filter((b) => b.until > now);
   if (!preview && (busy.length >= 3 || now - (last.get(e) ?? -9) < 0.25)) return false;
   last.set(e, now);
   const slot = { until: now + 2 };
   busy.push(slot);
+  if (recorded) {
+    slot.until = now + playLaugh(k, recorded);
+    return true;
+  }
   const voiceName = typeof name === 'function' ? name(Math.random) : name;
   const sp = who ? V.speakerFor(who) : V.speaker(Math.random);
   // Las voces se calculan en el teléfono: primero se dibuja la burbuja y luego se arma el sonido.

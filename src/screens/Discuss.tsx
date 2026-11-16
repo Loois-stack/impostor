@@ -1,10 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Emo } from '../components/Emo';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { EventCard } from '../components/EventCard';
 import { EventOverlay } from '../components/EventOverlay';
 import { LeaveSheet } from '../components/LeaveGame';
+import { Meeting } from '../components/Meeting';
+import { useTalking } from '../components/Voice';
 import { PlayerCard } from '../components/PlayerCard';
 import { VoteCallBar, VoteCallButton } from '../components/VoteCall';
 import { Avatar, Button, Glitch, IconButton, Overlay, Sheet } from '../components/ui';
@@ -125,6 +127,12 @@ function RoundClock({ endsAt, total, onTimeUp }: { endsAt: number; total: number
   );
 }
 
+/** Aro verde alrededor del avatar de quien está hablando en la llamada. */
+function TalkRing({ player, children }: { player: Player; children: ReactNode }) {
+  const talking = useTalking(player);
+  return <div className={`talk-ring ${talking ? 'talking' : ''}`}>{children}</div>;
+}
+
 function PlayerGrid({ players, onPick, marked }: { players: Player[]; onPick: (id: string) => void; marked?: string[] }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8, maxWidth: 520, width: '100%', margin: '0 auto' }}>
@@ -160,7 +168,7 @@ export function Discuss() {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
   const adult = useGame((s) => s.settings.adult);
-  const { nextTurn, dismissChallenge, toggleCursed, go, setModerator, openVote, pauseRound } = useGame();
+  const { nextTurn, dismissChallenge, toggleCursed, go, setModerator, openVote, pauseRound, endMeeting } = useGame();
   const moderatorId = useGame((s) => s.session.moderator);
   const { online, me, host, seats } = useSeat();
   const present = useNet((s) => s.present);
@@ -190,6 +198,8 @@ export function Discuss() {
   // Efectos públicos que duran toda la ronda (acentos, reglas…), de quien no está en turno.
   const effects = round.order.filter((id) => id !== pid && activeTurnEvent(round, id)?.round);
   const missions = Object.keys(round.missions).length;
+  // Sala: al terminar cada vuelta, reunión para discutir (sin turnos).
+  const meeting = online && !!round.meeting;
 
   const onTimeUp = () => {
     setTimeUp(true);
@@ -301,102 +311,110 @@ export function Discuss() {
         </motion.button>
       )}
 
-      <div className="row content" style={{ justifyContent: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-        {round.order.map((id, i) => {
-          const p = P(id);
-          const done = i < round.turn;
-          const out = round.accused.includes(id);
-          const gone = left.includes(id);
-          const ev = activeTurnEvent(round, id);
-          const off = online && !isHere(p, present);
-          return (
-            <motion.div
-              key={id}
-              animate={{ scale: i === round.turn ? 1.2 : out || gone ? 0.8 : 1, opacity: i === round.turn ? 1 : out || gone ? 0.25 : done ? 0.4 : 0.75 }}
-              style={{ position: 'relative' }}
-            >
-              <Avatar
-                player={p}
-                size={30}
-                style={{ boxShadow: i === round.turn ? `0 0 0 3px #fff, 0 0 16px ${p.color}` : undefined, filter: out ? 'grayscale(1)' : undefined }}
-              />
-              {out ? (
-                <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 16 }}>💀</span>
-              ) : gone ? (
-                <span className="badge">🚪</span>
-              ) : off ? (
-                <span className="badge">📵</span>
-              ) : ev ? (
-                <span className="badge">{KIND_META[ev.kind].emoji}</span>
-              ) : null}
-            </motion.div>
-          );
-        })}
-      </div>
-
-      <div className="grow center content" style={{ minHeight: 0 }}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={turnKey}
-            className="center"
-            style={{ gap: 14 }}
-            initial={{ x: 200, opacity: 0, rotateY: -40 }}
-            animate={{ x: 0, opacity: 1, rotateY: 0 }}
-            exit={{ x: -200, opacity: 0, rotateY: 40 }}
-            transition={{ type: 'spring', stiffness: 240, damping: 24 }}
-          >
-            <div className="label">{myTurn ? (pid === me ? '¡Es tu turno!' : 'Turno de (en tu teléfono)') : 'Turno de'}</div>
-            <div style={{ position: 'relative', width: 144, height: 144, display: 'grid', placeItems: 'center' }}>
+      {!meeting && (
+        <div className="row content" style={{ justifyContent: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+          {round.order.map((id, i) => {
+            const p = P(id);
+            const done = i < round.turn;
+            const out = round.accused.includes(id);
+            const gone = left.includes(id);
+            const ev = activeTurnEvent(round, id);
+            const off = online && !isHere(p, present);
+            return (
               <motion.div
-                animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.15, 0.5] }}
-                transition={{ repeat: Infinity, duration: 2 }}
-                style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: player.color, filter: 'blur(20px)' }}
-              />
-              <Avatar player={player} size={120} mood={pending ? undefined : 'talk'} />
-              {round.timer > 0 && !pending && <TurnTimer seconds={round.timer} turnKey={turnKey} />}
-            </div>
-            <div className="h1" style={{ color: player.color, textShadow: `0 0 30px ${player.color}88`, marginTop: round.timer ? 18 : 0 }}>
-              {player.name}
-            </div>
-            {turnEv ? (
-              <motion.div
-                initial={{ scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 320, damping: 18 }}
-                className="turn-event"
-                style={{ '--ev': KIND_META[turnEv.kind].color } as CSSProperties}
+                key={id}
+                animate={{ scale: i === round.turn ? 1.2 : out || gone ? 0.8 : 1, opacity: i === round.turn ? 1 : out || gone ? 0.25 : done ? 0.4 : 0.75 }}
+                style={{ position: 'relative' }}
               >
-                <div className="label" style={{ color: KIND_META[turnEv.kind].color }}>
-                  ⚡ Evento especial · <Emo e={KIND_META[turnEv.kind].emoji} size={14} /> {KIND_META[turnEv.kind].label}
-                </div>
-                <div style={{ fontSize: 16, lineHeight: 1.35, fontWeight: 800 }}>{turnEv.text}</div>
-                <div className="dim" style={{ fontSize: 11.5 }}>
-                  {turnEv.round ? '⏳ Le dura toda la ronda' : '⏱️ Se quita cuando pase el turno'}
-                </div>
+                <TalkRing player={p}>
+                  <Avatar
+                    player={p}
+                    size={30}
+                    style={{ boxShadow: i === round.turn ? `0 0 0 3px #fff, 0 0 16px ${p.color}` : undefined, filter: out ? 'grayscale(1)' : undefined }}
+                  />
+                </TalkRing>
+                {out ? (
+                  <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 16 }}>💀</span>
+                ) : gone ? (
+                  <span className="badge">🚪</span>
+                ) : off ? (
+                  <span className="badge">📵</span>
+                ) : ev ? (
+                  <span className="badge">{KIND_META[ev.kind].emoji}</span>
+                ) : null}
               </motion.div>
-            ) : (
-              <div style={{ fontSize: 17, lineHeight: 1.4, maxWidth: 300 }}>
-                {round.event === 'mime' ? (
-                  <>
-                    Da tu pista <b>solo con mímica</b>. Ni una palabra. 🤐
-                  </>
-                ) : (
-                  <>
-                    Di <b>{round.event === 'oneword' ? 'UNA sola palabra' : 'una palabra o frase'}</b> sobre tu carta. Ni muy obvia… ni muy vaga.
-                  </>
-                )}
-              </div>
-            )}
-            {moderator && !online && (
-              <div className="dim" style={{ fontSize: 12.5 }}>
-                📱 {moderator.name} toca {judge ? 'si cumplió o no' : <b>Siguiente</b>} cuando termine
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+            );
+          })}
+        </div>
+      )}
 
-      {effects.length > 0 && (
+      {meeting ? (
+        <Meeting key={round.meeting!.since} seats={myRoundSeats} />
+      ) : (
+          <div className="grow center content" style={{ minHeight: 0 }}>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={turnKey}
+                className="center"
+                style={{ gap: 14 }}
+                initial={{ x: 200, opacity: 0, rotateY: -40 }}
+                animate={{ x: 0, opacity: 1, rotateY: 0 }}
+                exit={{ x: -200, opacity: 0, rotateY: 40 }}
+                transition={{ type: 'spring', stiffness: 240, damping: 24 }}
+              >
+                <div className="label">{myTurn ? (pid === me ? '¡Es tu turno!' : 'Turno de (en tu teléfono)') : 'Turno de'}</div>
+                <div style={{ position: 'relative', width: 144, height: 144, display: 'grid', placeItems: 'center' }}>
+                  <motion.div
+                    animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.15, 0.5] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                    style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: player.color, filter: 'blur(20px)' }}
+                  />
+                  <Avatar player={player} size={120} mood={pending ? undefined : 'talk'} />
+                  {round.timer > 0 && !pending && <TurnTimer seconds={round.timer} turnKey={turnKey} />}
+                </div>
+                <div className="h1" style={{ color: player.color, textShadow: `0 0 30px ${player.color}88`, marginTop: round.timer ? 18 : 0 }}>
+                  {player.name}
+                </div>
+                {turnEv ? (
+                  <motion.div
+                    initial={{ scale: 0.6, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: 'spring', stiffness: 320, damping: 18 }}
+                    className="turn-event"
+                    style={{ '--ev': KIND_META[turnEv.kind].color } as CSSProperties}
+                  >
+                    <div className="label" style={{ color: KIND_META[turnEv.kind].color }}>
+                      ⚡ Evento especial · <Emo e={KIND_META[turnEv.kind].emoji} size={14} /> {KIND_META[turnEv.kind].label}
+                    </div>
+                    <div style={{ fontSize: 16, lineHeight: 1.35, fontWeight: 800 }}>{turnEv.text}</div>
+                    <div className="dim" style={{ fontSize: 11.5 }}>
+                      {turnEv.round ? '⏳ Le dura toda la ronda' : '⏱️ Se quita cuando pase el turno'}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <div style={{ fontSize: 17, lineHeight: 1.4, maxWidth: 300 }}>
+                    {round.event === 'mime' ? (
+                      <>
+                        Da tu pista <b>solo con mímica</b>. Ni una palabra. 🤐
+                      </>
+                    ) : (
+                      <>
+                        Di <b>{round.event === 'oneword' ? 'UNA sola palabra' : 'una palabra o frase'}</b> sobre tu carta. Ni muy obvia… ni muy vaga.
+                      </>
+                    )}
+                  </div>
+                )}
+                {moderator && !online && (
+                  <div className="dim" style={{ fontSize: 12.5 }}>
+                    📱 {moderator.name} toca {judge ? 'si cumplió o no' : <b>Siguiente</b>} cuando termine
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+      )}
+
+      {effects.length > 0 && !meeting && (
         <div className="stack content" style={{ gap: 4, marginBottom: 8 }}>
           {effects.map((id) => {
             const ev = activeTurnEvent(round, id)!;
@@ -414,8 +432,8 @@ export function Discuss() {
 
       <div className="stack content" style={{ gap: 8 }}>
         {/* En sala, cualquiera pide votar con el botón rojo; con mayoría se vota al terminar la vuelta. */}
-        {online && <VoteCallBar />}
-        {host ? (
+        {online && !meeting && <VoteCallBar />}
+        {meeting ? null : host ? (
           judge ? (
             <div className="row" style={{ gap: 8 }}>
               <Button silent onClick={() => pass(true)} style={{ flex: 1, fontSize: 22, '--accent': '#1fbf6b' } as CSSProperties}>
@@ -596,6 +614,18 @@ export function Discuss() {
             }}
           >
             🗳️ Votar ya, sin esperar
+          </Button>
+        )}
+        {host && meeting && (
+          <Button
+            variant="ghost"
+            small
+            onClick={() => {
+              setSheet(null);
+              endMeeting();
+            }}
+          >
+            ▶ Otra vuelta ya, sin esperar
           </Button>
         )}
         {host && (

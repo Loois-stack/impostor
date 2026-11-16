@@ -20,7 +20,12 @@ dropLegacyCache();
 bootNet();
 
 // Acceso de depuración desde la consola en desarrollo.
-if (import.meta.env.DEV) Object.assign(window, { __game: useGame, __cards: BY_ID });
+if (import.meta.env.DEV) {
+  Object.assign(window, { __game: useGame, __cards: BY_ID });
+  // Para las pruebas de la llamada de voz (la misma instancia que usa la app).
+  void import('./net/voice').then((v) => Object.assign(window, { __voice: v }));
+  void import('./audio/reactions').then((r) => Object.assign(window, { __rx: r }));
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

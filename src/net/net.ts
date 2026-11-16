@@ -3,8 +3,11 @@ import { IN_ROUND, MAX_PLAYERS, syncCustom, useGame, type CustomCard, type Scree
 import { usePrefs } from '../store/prefs';
 import { clock } from './clock';
 import { REACTIONS, showReaction } from '../fx/reactions';
+import { clearRoomLaughs, setRoomLaugh } from '../audio/reactions';
+import { isLaugh } from '../audio/myLaugh';
 import { link, type NetAction } from './link';
 import { publicId, useNet } from './state';
+import { bindVoice, resetVoice, setRoster, useVoice, type VoiceEntry } from './voice';
 
 /**
  * Multijugador en varios teléfonos.
@@ -19,7 +22,7 @@ import { publicId, useNet } from './state';
  * Es un juego entre amigos: el estado completo viaja a cada teléfono y no se cifra nada extra.
  */
 
-const PROTOCOL = 5;
+const PROTOCOL = 6;
 const PREFIX = 'impostor-quien-miente-';
 /** Sin letras ni números que se confundan al dictarlos (0/O, 1/I…). */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -33,13 +36,24 @@ const ALONE_MS = 8000;
 type Snapshot = Pick<ReturnType<typeof useGame.getState>, 'screen' | 'players' | 'profiles' | 'settings' | 'session' | 'round'>;
 
 type HostMsg =
-  | { t: 'state'; s: Snapshot; now: number; present: string[] }
+  | { t: 'state'; s: Snapshot; now: number; present: string[]; voice: Record<string, VoiceEntry> }
   | { t: 'react'; e: string; from: string }
+  /** La risa grabada de un teléfono (o que la borró). */
+  | { t: 'laugh'; from: string; d: string | null }
   | { t: 'cards'; cards: CustomCard[] }
   | { t: 'deny'; reason: 'full' | 'version' }
   | { t: 'ping' }
   | { t: 'bye' };
-type GuestMsg = { t: 'hello'; v: number; id: string; name: string } | { t: 'act'; a: NetAction } | { t: 'react'; e: string } | { t: 'pong' } | { t: 'bye' };
+type GuestMsg =
+  | { t: 'hello'; v: number; id: string; name: string }
+  | { t: 'act'; a: NetAction }
+  | { t: 'react'; e: string }
+  /** Entró o salió de la llamada de voz, o abrió/silenció el micrófono. */
+  | { t: 'voice'; on: boolean; mic: boolean }
+  /** Su risa grabada (o que la borró). */
+  | { t: 'laugh'; d: string | null }
+  | { t: 'pong' }
+  | { t: 'bye' };
 
 export const normalizeCode = (raw: string) =>
   raw
@@ -106,6 +120,11 @@ let unsub: (() => void) | null = null;
 let beat = 0;
 let retry = 0;
 let queued = false;
+/** Anfitrión: quiénes están en la llamada de voz. */
+const voiceRoster = new Map<string, VoiceEntry>();
+/** Anfitrión: la risa grabada de cada invitado. */
+const laughs = new Map<string, string>();
+let unsubPrefs: (() => void) | null = null;
 
 const send = (c: DataConnection | null | undefined, m: HostMsg | GuestMsg) => {
   // Todo viaja como texto JSON: sin sorpresas con `undefined` y PeerJS lo parte en trozos si es grande.
@@ -127,6 +146,12 @@ function teardown() {
   clearTimeout(retry);
   conns.clear();
   lastSeen.clear();
+  voiceRoster.clear();
+  resetVoice();
+  laughs.clear();
+  clearRoomLaughs();
+  unsubPrefs?.();
+  unsubPrefs = null;
   hostConn = null;
   const p = peer;
   peer = null;
@@ -165,7 +190,7 @@ function broadcast() {
   if (useNet.getState().role !== 'host') return;
   const here = present();
   useNet.setState({ present: here });
-  const msg: HostMsg = { t: 'state', s: snapshot(), now: Date.now(), present: here };
+  const msg: HostMsg = { t: 'state', s: snapshot(), now: Date.now(), present: here, voice: Object.fromEntries(voiceRoster) };
   for (const c of conns.values()) send(c, msg);
 }
 
@@ -174,6 +199,18 @@ function schedule() {
   if (queued) return;
   queued = true;
   setTimeout(broadcast, 0);
+}
+
+/** Anfitrión: cambió quién está en la llamada; se avisa a todos (y a la llamada de este teléfono). */
+function rosterChanged() {
+  setRoster(Object.fromEntries(voiceRoster));
+  schedule();
+}
+
+/** Un teléfono dejó la sala: también deja la llamada. */
+function forget(pid: string) {
+  laughs.delete(pid);
+  if (voiceRoster.delete(pid)) rosterChanged();
 }
 
 function onGuest(conn: DataConnection) {
@@ -193,6 +230,10 @@ function onGuest(conn: DataConnection) {
       if (old && old !== conn) old.close();
       lastSeen.set(pid, Date.now());
       send(conn, { t: 'cards', cards: useGame.getState().customCards });
+      // Las risas grabadas de la sala (una por mensaje: cada una pesa unos 40 KB).
+      const mine = usePrefs.getState().laugh;
+      if (mine) send(conn, { t: 'laugh', from: publicId(usePrefs.getState().deviceId), d: mine });
+      for (const [from, d] of laughs) if (from !== pid) send(conn, { t: 'laugh', from, d });
       schedule();
       return;
     }
@@ -201,8 +242,19 @@ function onGuest(conn: DataConnection) {
     lastGuestSeen = Date.now();
     if (m.t === 'act' && m.a && typeof m.a === 'object') useGame.getState().remote(pid, m.a);
     else if (m.t === 'react') relayReaction(m.e, pid);
-    else if (m.t === 'bye') {
+    else if (m.t === 'laugh') {
+      const d = isLaugh(m.d) ? m.d : null;
+      if (d) laughs.set(pid, d);
+      else laughs.delete(pid);
+      setRoomLaugh(pid, d);
+      for (const [id, c] of conns) if (id !== pid) send(c, { t: 'laugh', from: pid, d });
+    } else if (m.t === 'voice') {
+      if (m.on === true) voiceRoster.set(pid, { peer: conn.peer, mic: m.mic === true });
+      else voiceRoster.delete(pid);
+      rosterChanged();
+    } else if (m.t === 'bye') {
       conns.delete(pid);
+      forget(pid);
       // Salió de la partida: entre rondas deja su lugar (con quienes jugaban en su teléfono);
       // a media ronda la partida sigue sin él (se salta su turno y no se le espera para votar).
       useGame.getState().leaveRound(pid);
@@ -212,6 +264,7 @@ function onGuest(conn: DataConnection) {
   const gone = () => {
     if (pid && conns.get(pid) === conn) {
       conns.delete(pid);
+      forget(pid);
       schedule();
     }
   };
@@ -220,6 +273,12 @@ function onGuest(conn: DataConnection) {
 }
 
 function hostLoop() {
+  unsubPrefs?.();
+  unsubPrefs = usePrefs.subscribe((s, prev) => {
+    if (s.laugh === prev.laugh) return;
+    const from = publicId(s.deviceId);
+    for (const c of conns.values()) send(c, { t: 'laugh', from, d: s.laugh ?? null });
+  });
   unsub?.();
   unsub = useGame.subscribe((s, prev) => {
     if (s.customCards !== prev.customCards) for (const c of conns.values()) send(c, { t: 'cards', cards: s.customCards });
@@ -232,6 +291,7 @@ function hostLoop() {
     for (const [id, c] of conns) {
       if (t - (lastSeen.get(id) ?? 0) > DEAD_MS) {
         conns.delete(id);
+        forget(id);
         c.close();
         changed = true;
       } else send(c, { t: 'ping' });
@@ -285,6 +345,11 @@ export async function hostRoom(name: string, resumeCode?: string) {
   const open = (code: string) => {
     const p = new PeerCtor(PREFIX + code, peerOptions());
     peer = p;
+    bindVoice(p, me, (on, mic) => {
+      if (on) voiceRoster.set(me, { peer: p.id, mic });
+      else voiceRoster.delete(me);
+      rosterChanged();
+    });
     p.on('open', () => {
       useNet.setState({ code, status: 'open', error: undefined });
       if (!useGame.getState().online) useGame.getState().openRoom({ id: me, name });
@@ -319,6 +384,7 @@ export function kick(id: string) {
   const c = conns.get(id);
   send(c, { t: 'bye' });
   conns.delete(id);
+  forget(id);
   setTimeout(() => c?.close(), 300);
   useGame.getState().removePlayer(id);
 }
@@ -335,12 +401,16 @@ function onHost(raw: unknown) {
       clock.offset = m.now - Date.now();
       useNet.setState({ status: 'open', error: undefined, present: m.present, lostSince: undefined, giveUpAt: undefined });
       useGame.setState({ ...m.s, online: true });
+      setRoster(m.voice && typeof m.voice === 'object' ? m.voice : {});
       break;
     case 'cards':
       syncCustom(m.cards);
       break;
     case 'react':
       if (REACTIONS.includes(m.e)) showReaction(m.e, m.from);
+      break;
+    case 'laugh':
+      if (typeof m.from === 'string') setRoomLaugh(m.from, isLaugh(m.d) ? m.d : null);
       break;
     case 'ping':
       send(hostConn, { t: 'pong' });
@@ -365,7 +435,14 @@ function dial() {
   old?.close();
   const c = p.connect(PREFIX + code, { reliable: true });
   hostConn = c;
-  c.on('open', () => send(c, { t: 'hello', v: PROTOCOL, id: prefs.deviceId, name: prefs.name }));
+  c.on('open', () => {
+    send(c, { t: 'hello', v: PROTOCOL, id: prefs.deviceId, name: prefs.name });
+    // Si ya estaba en la llamada (se reconectó), vuelve a avisar.
+    const v = useVoice.getState();
+    if (v.joined) send(c, { t: 'voice', on: true, mic: v.mic });
+    const laugh = usePrefs.getState().laugh;
+    if (laugh) send(c, { t: 'laugh', d: laugh });
+  });
   c.on('data', onHost);
   const lost = () => hostConn === c && redial();
   c.on('close', lost);
@@ -411,6 +488,10 @@ export async function joinRoom(rawCode: string, name: string) {
 
   const p = new PeerCtor(peerOptions());
   peer = p;
+  bindVoice(p, publicId(usePrefs.getState().deviceId), (on, mic) => send(hostConn, { t: 'voice', on, mic }));
+  unsubPrefs = usePrefs.subscribe((s, prev) => {
+    if (s.laugh !== prev.laugh) send(hostConn, { t: 'laugh', d: s.laugh ?? null });
+  });
   p.on('open', dial);
   p.on('disconnected', () => peer === p && redial());
   p.on('error', (err) => {

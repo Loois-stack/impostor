@@ -3,6 +3,7 @@ import { Component, useEffect, useRef, useState, type CSSProperties, type ReactN
 import { setVibration, sfx, type MusicMood } from './audio/sfx';
 import { ConnectionLost } from './components/ConnectionLost';
 import { LeaveFab } from './components/LeaveGame';
+import { VoiceFab } from './components/Voice';
 import { screenAnim } from './components/ui';
 import { CAT } from './data/categories';
 import { THEME_BY_ID } from './data/themes';
@@ -11,7 +12,7 @@ import { FxLayer } from './fx/fx';
 import { ReactionLayer } from './fx/reactions';
 import { RainLayer, ReactFab, Scene, SceneCard, sceneFor, type SceneTitle } from './fx/scene';
 import { SKINS, skinVars } from './fx/skins';
-import { react } from './net/net';
+import { inviteOnce, react } from './net/net';
 import { useNet } from './net/state';
 import { Awards } from './screens/Awards';
 import { Custom } from './screens/Custom';
@@ -58,6 +59,8 @@ const REACT_ON: Screen[] = ['discuss', 'vote', 'reveal', 'score', 'awards', 'lob
 
 /** En sala, pantallas de la partida con botón para salir (las pistas lo tienen en su menú). */
 const LEAVE_ON: Screen[] = ['intro', 'deal', 'vote', 'reveal'];
+/** Sala: la llamada de voz está a la mano en la sala de espera y en toda la partida. */
+const VOICE_ON: Screen[] = ['lobby', 'intro', 'deal', 'discuss', 'vote', 'reveal', 'score', 'awards'];
 
 /** Pantallas que necesitan una ronda en curso para dibujarse. */
 const NEEDS_ROUND: Screen[] = [...IN_ROUND, 'score'];
@@ -193,6 +196,12 @@ export function App() {
     sfx.setMusic(musicMood);
   }, [musicMood]);
 
+  // Se abrió con el enlace de una sala: a entrar, salvo que haya una ronda en juego en este teléfono.
+  useEffect(() => {
+    const g = useGame.getState();
+    if (!g.online && !IN_ROUND.includes(g.screen) && inviteOnce()) g.go('online');
+  }, []);
+
   // Una pantalla de ronda sin ronda (p. ej. un invitado que recarga) cae al menú o a la sala.
   const safe: Screen = NEEDS_ROUND.includes(screen) && !round ? (online ? 'lobby' : 'home') : screen;
   const Current = SCREENS[safe] ?? Home;
@@ -250,6 +259,7 @@ export function App() {
         </motion.div>
       </AnimatePresence>
       {online && LEAVE_ON.includes(safe) && <LeaveFab />}
+      {online && VOICE_ON.includes(safe) && <VoiceFab />}
       <NetBanner />
       <ConnectionLost />
       <UpdateBanner screen={safe} online={online} />

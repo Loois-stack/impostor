@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+import { canRecord, recordLaugh, type Recording } from '../audio/myLaugh';
 import { reactionSound } from '../audio/reactions';
-import { sfx } from '../audio/sfx';
+import { haptic, sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
 import { PackGallery } from '../components/PackGallery';
 import { Avatar, Button, Segmented, Sheet, Toggle, TopBar } from '../components/ui';
@@ -14,6 +15,83 @@ import { downloadAll, offlineStatus, type OfflineStatus } from '../services/imag
 import { AVATAR_CHOICES, useGame } from '../store/game';
 import { publicId } from '../net/state';
 import { usePrefs } from '../store/prefs';
+
+/** Graba tu propia risa: tu 😂 suena con ella (en una sala, en todos los teléfonos). */
+function LaughRecorder() {
+  const laugh = usePrefs((s) => s.laugh);
+  const set = usePrefs((s) => s.set);
+  const [rec, setRec] = useState<Recording | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [err, setErr] = useState<string>();
+  const play = () => {
+    sfx.unlock();
+    floatReaction('😂');
+    reactionSound('😂', undefined, true, true);
+  };
+  const start = async () => {
+    setErr(undefined);
+    sfx.unlock();
+    let r: Recording;
+    try {
+      r = await recordLaugh();
+    } catch (e) {
+      const denied = (e as DOMException)?.name === 'NotAllowedError';
+      return setErr(denied ? 'No diste permiso para usar el micrófono. Actívalo en los permisos del navegador.' : 'No se pudo abrir el micrófono.');
+    }
+    haptic(20);
+    setRec(r);
+    const t0 = Date.now();
+    const id = window.setInterval(() => setElapsed((Date.now() - t0) / 1000), 100);
+    try {
+      const d = await r.done;
+      if (!d) setErr('No se oyó nada. Acércate al micrófono y ríete con ganas.');
+      else {
+        set({ laugh: d });
+        setTimeout(play, 150);
+      }
+    } catch {
+      setErr('No se pudo guardar la grabación. Intenta otra vez.');
+    } finally {
+      clearInterval(id);
+      setRec(null);
+      setElapsed(0);
+    }
+  };
+  if (!canRecord()) return null;
+  return (
+    <div className="laugh-rec stack" style={{ gap: 8 }}>
+      <b>🎤 Tu propia risa</b>
+      <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
+        Graba tu risa (hasta 3 segundos) y tu 😂 sonará con tu voz de verdad. Se guarda en este teléfono y en una sala solo la oyen quienes están en ella.
+      </div>
+      {rec ? (
+        <Button variant="danger" onClick={() => rec.stop()} className="rec-btn">
+          <span className="rec-dot" /> Grabando… ¡ríete! · {Math.max(0, 3 - elapsed).toFixed(1)} s
+          <span className="rec-bar" style={{ width: `${Math.min(100, (elapsed / 3) * 100)}%` }} />
+        </Button>
+      ) : laugh ? (
+        <div className="row" style={{ gap: 6 }}>
+          <Button small onClick={play} style={{ flex: 1 }}>
+            ▶ Escuchar
+          </Button>
+          <Button small variant="ghost" onClick={() => void start()} style={{ flex: 1 }}>
+            🔁 Otra vez
+          </Button>
+          <Button small variant="ghost" onClick={() => set({ laugh: undefined })} style={{ flex: 1 }}>
+            🗑️ Borrar
+          </Button>
+        </div>
+      ) : (
+        <Button onClick={() => void start()}>🎙️ Grabar mi risa</Button>
+      )}
+      {err && (
+        <div className="dim" style={{ fontSize: 12.5, color: '#ff8a9a' }}>
+          {err}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Sonidos de las reacciones: cuáles suenan en este teléfono y un tablero para probarlos. */
 function ReactionSounds() {
@@ -45,7 +123,7 @@ function ReactionSounds() {
             onClick={() => {
               sfx.unlock();
               floatReaction(e);
-              if (!reactionSound(e, publicId(usePrefs.getState().deviceId), true)) sfx.select();
+              if (!reactionSound(e, publicId(usePrefs.getState().deviceId), true, true)) sfx.select();
             }}
           >
             {e}
@@ -55,6 +133,7 @@ function ReactionSounds() {
       <div className="dim" style={{ fontSize: 12 }}>
         {sound ? 'Toca uno para escucharlo: así suena tu voz en una sala.' : 'Prende los efectos de sonido para escucharlos.'}
       </div>
+      <LaughRecorder />
     </div>
   );
 }

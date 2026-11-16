@@ -116,6 +116,19 @@ class Sfx {
 
   // ---------------- Música procedural ----------------
 
+  private ducked = false;
+  /** Durante la llamada de voz la música baja para que se oiga a la gente. */
+  duck(on: boolean) {
+    this.ducked = on;
+    const ctx = this.ctx;
+    if (!ctx || !this.musicGain || !this.seqTimer) return;
+    const g = this.musicGain.gain;
+    const t = ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(on ? 0.12 : 0.5, t + 0.5);
+  }
+
   setMusic(mood: MusicMood | null) {
     if (mood === this.mood) return;
     this.mood = mood;
@@ -131,7 +144,7 @@ class Sfx {
     const t = ctx.currentTime;
     g.cancelScheduledValues(t);
     g.setValueAtTime(g.value, t);
-    g.linearRampToValueAtTime(on ? 0.5 : 0, t + 0.5);
+    g.linearRampToValueAtTime(on ? (this.ducked ? 0.12 : 0.5) : 0, t + 0.5);
     clearInterval(this.seqTimer);
     this.seqTimer = 0;
     if (!on) return;

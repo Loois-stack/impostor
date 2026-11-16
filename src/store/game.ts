@@ -137,6 +137,13 @@ export interface Round {
   left?: string[];
   /** Sala: quienes piden votar. Con mayoría se vota al terminar la vuelta; si lo piden todos, ya. */
   voteCalls?: string[];
+  /**
+   * Sala: reunión al terminar una vuelta. Todos discuten (con la llamada de voz si quieren) y la
+   * mayoría decide: votar ya (`voteCalls`) u otra vuelta de pistas (`moreCalls`). `ends`: hora límite.
+   */
+  meeting?: { since: number; ends: number };
+  /** Sala, en la reunión: quienes piden otra vuelta. */
+  moreCalls?: string[];
   /** Sobre de cada jugador (diseño y brillo). Se sortea sin mirar el rol. */
   packs?: Record<string, PackRoll>;
   lap: number;
@@ -238,6 +245,12 @@ interface State {
   resumeRound(): void;
   /** Sala: un jugador pide (o deja de pedir) votar. */
   callVote(player: string, on: boolean): void;
+  /** Sala, en la reunión: un jugador pide (o deja de pedir) otra vuelta. */
+  callMore(player: string, on: boolean): void;
+  /** Sala (anfitrión): revisa si la reunión ya se decidió. Con `timeUp` se decide por quienes pidieron algo (empate: otra vuelta). */
+  settleMeeting(timeUp?: boolean): void;
+  /** Sala (anfitrión): termina la reunión y sigue otra vuelta de pistas. */
+  endMeeting(): void;
   /** Sala (anfitrión): un teléfono salió a media ronda; la partida sigue sin él. */
   leaveRound(owner: string): void;
   setStep(step: Step): void;
@@ -374,6 +387,14 @@ export function voteCallStatus(r: Pick<Round, 'order' | 'accused' | 'left' | 'vo
   const calls = (r.voteCalls ?? []).filter((id) => voters.includes(id));
   const need = Math.floor(voters.length / 2) + 1;
   return { calls, need, total: voters.length, ready: voters.length > 0 && calls.length >= need, all: voters.length > 0 && calls.length === voters.length };
+}
+
+/** Sala: duración de la reunión al terminar cada vuelta. */
+export const MEETING_MS = 90_000;
+
+/** Sala, en la reunión: cuántos piden otra vuelta (con mayoría se sigue jugando). */
+export function moreCallStatus(r: Pick<Round, 'order' | 'accused' | 'left' | 'moreCalls'>) {
+  return voteCallStatus({ ...r, voteCalls: r.moreCalls });
 }
 
 /** ¿El turno actual es el último antes de votar? (cuenta bien aunque el último de la lista esté eliminado) */
@@ -653,7 +674,8 @@ export const useGame = create<State>()(
           return link.send({ a: 'next', as: r ? r.order[r.turn] : undefined });
         }
         const { round, history, settings } = get();
-        if (!round || round.phase !== 'discuss') return;
+        // En la reunión no hay turnos: se sigue con "otra vuelta" o se vota.
+        if (!round || round.phase !== 'discuss' || round.meeting) return;
         // El evento de turno se quita al pasar al siguiente jugador.
         const pid = round.order[round.turn];
         const ending = activeTurnEvent(round, pid);
@@ -666,7 +688,12 @@ export const useGame = create<State>()(
         // Se acabó la vuelta: si la mayoría pidió votar (o ya no hay más vueltas), todos a votar.
         const lapDone = lap > cur.lap;
         if ((cur.laps > 0 && lap > cur.laps) || (lapDone && voteCallStatus(cur).ready))
-          return set({ round: { ...cur, phase: 'vote', votes: {}, voteCalls: [] }, screen: 'vote' });
+          return set({ round: { ...cur, phase: 'vote', votes: {}, voteCalls: [], meeting: undefined, moreCalls: [] }, screen: 'vote' });
+        // En sala, al terminar la vuelta todos pasan a la reunión para discutir.
+        if (lapDone && get().online) {
+          const t = Date.now();
+          return set({ round: { ...cur, lap, turn, meeting: { since: t, ends: t + MEETING_MS }, moreCalls: [] } });
+        }
         const { r, h } = rollTurnChallenge({ ...cur, lap, turn }, history, settings);
         set({ round: r, history: h });
       },
@@ -688,7 +715,7 @@ export const useGame = create<State>()(
       openVote() {
         const { round } = get();
         if (!round || link.guest || round.result) return;
-        set({ round: { ...round, phase: 'vote', votes: {}, voteCalls: [], pendingChallenge: undefined }, screen: 'vote' });
+        set({ round: { ...round, phase: 'vote', votes: {}, voteCalls: [], pendingChallenge: undefined, meeting: undefined, moreCalls: [] }, screen: 'vote' });
       },
 
       pauseRound() {
@@ -703,7 +730,12 @@ export const useGame = create<State>()(
         if (!round || link.guest) return;
         // El reloj de la ronda no corre mientras estuvo en pausa.
         const pausedFor = round.pausedAt ? Date.now() - round.pausedAt : 0;
-        const r: Round = { ...round, pausedAt: undefined, startedAt: round.startedAt ? round.startedAt + pausedFor : undefined };
+        const r: Round = {
+          ...round,
+          pausedAt: undefined,
+          startedAt: round.startedAt ? round.startedAt + pausedFor : undefined,
+          meeting: round.meeting ? { since: round.meeting.since + pausedFor, ends: round.meeting.ends + pausedFor } : undefined,
+        };
         set({ round: r, screen: resumeScreen(r) });
       },
 
@@ -714,10 +746,43 @@ export const useGame = create<State>()(
         const had = (round.voteCalls ?? []).includes(player);
         if (had === on) return;
         const voteCalls = on ? [...(round.voteCalls ?? []), player] : (round.voteCalls ?? []).filter((id) => id !== player);
-        const next = { ...round, voteCalls };
+        // Nadie pide las dos cosas a la vez.
+        const next = { ...round, voteCalls, moreCalls: on ? (round.moreCalls ?? []).filter((id) => id !== player) : round.moreCalls };
         // Si lo piden todos, no hay nada que esperar.
-        if (voteCallStatus(next).all) return set({ round: { ...next, phase: 'vote', votes: {}, voteCalls: [], pendingChallenge: undefined }, screen: 'vote' });
+        if (voteCallStatus(next).all) return set({ round: { ...next, phase: 'vote', votes: {}, voteCalls: [], pendingChallenge: undefined, meeting: undefined, moreCalls: [] }, screen: 'vote' });
         set({ round: next });
+        // En la reunión ya no hay vuelta que esperar: con mayoría se vota ya.
+        if (next.meeting) get().settleMeeting();
+      },
+
+      callMore(player, on) {
+        if (link.guest) return link.send({ a: 'more', as: player, on });
+        const { round } = get();
+        if (!round || round.phase !== 'discuss' || !round.meeting || !votersOf(round).includes(player)) return;
+        const had = (round.moreCalls ?? []).includes(player);
+        if (had === on) return;
+        const moreCalls = on ? [...(round.moreCalls ?? []), player] : (round.moreCalls ?? []).filter((id) => id !== player);
+        set({ round: { ...round, moreCalls, voteCalls: on ? (round.voteCalls ?? []).filter((id) => id !== player) : round.voteCalls } });
+        get().settleMeeting();
+      },
+
+      settleMeeting(timeUp) {
+        const { round } = get();
+        if (link.guest || !round?.meeting || round.phase !== 'discuss') return;
+        const v = voteCallStatus(round);
+        const m = moreCallStatus(round);
+        if (v.ready) return get().openVote();
+        if (m.ready) return get().endMeeting();
+        // Se acabó el tiempo sin mayoría: gana lo que más se pidió; si empatan (o nadie pidió nada), otra vuelta.
+        if (timeUp) return v.calls.length > m.calls.length ? get().openVote() : get().endMeeting();
+      },
+
+      endMeeting() {
+        const { round, history, settings } = get();
+        if (link.guest || !round?.meeting) return;
+        // Vuelta nueva: lo que se pidió en la reunión ya se decidió.
+        const { r, h } = rollTurnChallenge({ ...round, meeting: undefined, moreCalls: [], voteCalls: [] }, history, settings);
+        set({ round: r, history: h });
       },
 
       leaveRound(owner) {
@@ -735,8 +800,10 @@ export const useGame = create<State>()(
           return;
         }
         if (r.phase === 'discuss') {
+          r = { ...r, moreCalls: (r.moreCalls ?? []).filter((id) => !ids.includes(id)) };
           set({ round: r });
           if (voteCallStatus(r).all) return get().openVote();
+          if (r.meeting) return get().settleMeeting();
           // Si era su turno, pasa al siguiente.
           if (left.includes(r.order[r.turn])) get().nextTurn();
           return;
@@ -839,6 +906,8 @@ export const useGame = create<State>()(
           lastVote: undefined,
           lastTally: undefined,
           voteCalls: [],
+          meeting: undefined,
+          moreCalls: [],
           startedAt: Date.now(),
           pendingChallenge: undefined,
           // Si atraparon a uno de más, el "impostor extra" dejó de ser secreto.
@@ -1064,6 +1133,8 @@ export const useGame = create<State>()(
             return round.cursedWord && round.order.includes(a.player) && !round.cursed.includes(a.player) ? s.toggleCursed(a.player) : undefined;
           case 'callVote':
             return screen === 'discuss' && typeof a.on === 'boolean' ? s.callVote(as, a.on) : undefined;
+          case 'more':
+            return screen === 'discuss' && typeof a.on === 'boolean' ? s.callMore(as, a.on) : undefined;
         }
       },
     }),

@@ -16,6 +16,8 @@ export type NetAction =
   | { a: 'cursed'; player: string }
   /** Sala: pedir (o dejar de pedir) que se vote al terminar la vuelta. */
   | { a: 'callVote'; as?: string; on: boolean }
+  /** Sala, en la reunión: pedir (o dejar de pedir) otra vuelta de pistas. */
+  | { a: 'more'; as?: string; on: boolean }
   | { a: 'addLocal'; name: string }
   | { a: 'removeLocal'; as: string }
   | { a: 'avatar'; as: string; avatar: string };

@@ -42,12 +42,14 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
   - `GameCard.tsx`: las cartas.
   - `Emo.tsx`: emojis animados.
   - `EventCard.tsx` y `EventOverlay.tsx`: avisos de eventos.
-- `src/components/VoteCall.tsx` (botón y contador para pedir votación) y `LeaveGame.tsx` (salir con confirmación).
+- `src/components/VoteCall.tsx` (`CallButton`: pedir votación u otra vuelta, y el contador), `LeaveGame.tsx` (salir con confirmación), `Meeting.tsx` (reunión al terminar la vuelta) y `Voice.tsx` (botón flotante y controles de la llamada).
+- `src/net/voice.ts`: llamada de voz de la sala (malla WebRTC por PeerJS; el anfitrión reparte la lista `roster` en cada estado y llama el teléfono con id menor). Silenciar apaga la pista; salir suelta el micrófono. En dev, `window.__voice` expone el módulo para pruebas.
 - `src/net/`: multijugador con PeerJS (WebRTC). El anfitrión tiene la partida de verdad; los invitados reciben una copia y mandan acciones (`NetAction` en `link.ts`) que el anfitrión valida en `remote()`. Si cambian los mensajes, sube `PROTOCOL` en `net.ts`.
 - `src/fx/`: fondo animado, temas visuales (Neón, Fiesta, Casino), escenas de emojis, lluvias, reacciones y partículas.
 - `src/audio/sfx.ts`: **todos los sonidos y la música se sintetizan con Web Audio**. Son originales, sin archivos ni licencias y funcionan sin internet. Mantener esa regla para sonidos nuevos.
 - `src/audio/voicebox.ts`: caja de voz que calcula muestra por muestra (formantes en cascada estilo Klatt): pulso glotal con jitter/shimmer, aire sincronizado, carraspeo (`creak`), nasal y "j". Es pura y probada (`voice.test.ts`). `voices.ts` tiene los guiones (`Take` con puntos clave): risas (`guffaw`, `giggle`, `evilLaugh`, `snortLaugh`, `hysterical`), grito, "mmm", "¿eeeh?", "uuuy", "¡TÚ!", llanto, gallina, trompetilla y ronquido. `speakerFor(id)` da a cada jugador la misma voz en todos los teléfonos.
 - `src/audio/reactions.ts`: sonido de cada reacción (voz + efectos de Web Audio). Volúmenes y corte de graves en `REACTION_VOICES`, igualados para la bocina del celular (medir con un render sin conexión antes de cambiarlos). La voz se calcula después de dibujar la burbuja (en un celular lento tarda 20–80 ms). Se oyen en todos los teléfonos según `prefs.reactSound`; máximo 3 a la vez. **No usar sonidos de memes ni grabaciones ajenas** (derechos de autor): todo se crea desde cero.
+- `src/audio/myLaugh.ts`: grabar tu risa (MediaRecorder → 12 kHz µ-law, máx. 3 s, ~40 KB en base64). Se guarda en `prefs.laugh`; en sala viaja por mensajes `laugh` y el anfitrión la valida con `isLaugh`.
 - `src/services/`: fotos para jugar sin conexión (CORS, con reintentos ante el límite 429 de Wikimedia), actualizaciones y pantalla encendida.
 
 ## Reglas de diseño que hay que respetar
@@ -63,6 +65,8 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 - **Eventos de turno:** se anuncian a toda la mesa, se quitan al pasar el turno y ahí se califican. Las misiones secretas llegan en la carta y se revelan al final.
 - **Sala:** hasta 20 jugadores. Un teléfono puede llevar a jugadores sin celular (`owner`), que ven su carta y votan pasándolo.
 - **Pedir votación (sala):** cada jugador puede pedir votar (`round.voteCalls`, acción `callVote`). Con mayoría (`voteCallStatus`) se vota al terminar la vuelta; si lo piden todos, de inmediato. El anfitrión conserva "Votar ya, sin esperar" en el menú. Con un solo teléfono no cambia nada: el encargado decide.
+- **Reunión (sala):** al terminar cada vuelta (`nextTurn` con `online`), `round.meeting` (`MEETING_MS` = 90 s) y no corren turnos. Cada quien pide ▶ otra vuelta (`moreCalls`, acción `more`) o votar (`voteCalls`); nadie pide las dos. Mayoría → se hace ya (`settleMeeting`). Al acabarse el tiempo gana lo más pedido; empate o nada → otra vuelta (`endMeeting`). Si la mayoría ya pidió votar durante la vuelta, se vota sin reunión. Con un solo teléfono no hay reunión.
+- **Llamada de voz (sala):** opcional, nunca automática (el micrófono solo se abre con un toque). Advertir del eco si están juntos. Durante la llamada la música baja (`sfx.duck`).
 - **Salir de la partida (sala):** siempre con "¿Estás seguro?" (`LeaveGame.tsx`). Si un invitado sale a media ronda, el anfitrión lo marca en `round.left` (`leaveRound`): se salta su turno (`advance`), no se le espera para ver su carta ni para votar (`votersOf`), sigue siendo sospechoso y, si era impostor atrapado, ya no adivina (`guessersOf`). Si vuelve a entrar, regresa; si no, ya no recibe carta en la siguiente ronda. Si sale el anfitrión, se cierra la sala.
 - **Desconexiones (sala):** si todos los demás teléfonos llevan `ALONE_MS` sin conexión (contando desde la última vez que se supo de alguien), el anfitrión hace `pauseRound()`: vuelve a la sala y guarda `round.pausedAt`; `resumeRound()` ("Continuar ronda") recorre `startedAt` para que el reloj no pierda tiempo. El invitado sin anfitrión ve `ConnectionLost` (reintentar o ir al menú) y a los `GIVE_UP_MS` vuelve a "Entrar a una sala" con `lastCode` puesto.
 - **Sin internet:** con un solo teléfono el juego funciona sin conexión (las fuentes van empaquetadas). El modo de varios teléfonos sí necesita internet para encontrarse.
@@ -85,10 +89,11 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 7. Sala: si se desconectan todos, el anfitrión vuelve a la sala con la ronda en pausa; los invitados sin anfitrión pueden reintentar, ir al menú o volver a entrar con el código puesto.
 8. Reacciones con sonido propio hecho desde cero (risa sintetizada con tres estilos, grito, navaja, aplausos, etc.) y movimiento al compás. Ajuste "De todos / Solo mías / Apagados" y tablero para probarlas. Se arregló que quien mandaba una reacción en sala la viera dos veces.
 9. Caja de voz nueva (mucho más natural que los filtros de antes), voz propia por jugador, risa de cerdito y ataque de risa, y 11 reacciones nuevas graciosas (21 en total) en un selector de cuadrícula.
+10. Sala: reunión al terminar cada vuelta (otra vuelta o votar, por mayoría), llamada de voz en tiempo real con micrófono y altavoz, y grabar tu propia risa para el 😂. También: un enlace de sala ahora abre la sala aunque la app estuviera en otra pantalla (antes solo desde el menú). `PROTOCOL` = 6.
 
 ## Pendiente o sin verificar
 
-- No se ha probado en celulares reales: sensación al cortar el sobre, brillo y sonido del sobre personal, sonidos de reacciones (sobre todo cómo suena la voz sintetizada en la bocina), vibración y salas con el servidor público de PeerJS.
+- No se ha probado en celulares reales: sensación al cortar el sobre, brillo y sonido del sobre personal, sonidos de reacciones (sobre todo cómo suena la voz sintetizada en la bocina), vibración, salas con el servidor público de PeerJS, la llamada de voz (eco, si sale por el altavoz en iPhone, redes que bloquean conexiones directas) y grabar la risa en Safari.
 - La partida de 10 jugadores con 3 impostores funcionó como se esperaba: cada impostor tiene carta distinta, lo cual al principio confundió a la mesa.
 
 ## Preferencias del dueño

@@ -14,6 +14,8 @@ interface Prefs {
   music: boolean;
   vibration: boolean;
   reactSound: ReactSound;
+  /** Tu risa grabada (comprimida); si existe, tu 😂 suena con ella. */
+  laugh?: string;
   skin: Skin;
   /** Identidad estable del teléfono en las salas (para reconectarse sin perder el lugar). */
   deviceId: string;
