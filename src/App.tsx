@@ -4,6 +4,7 @@ import { setVibration, sfx, type MusicMood } from './audio/sfx';
 import { ConnectionLost } from './components/ConnectionLost';
 import { LeaveFab } from './components/LeaveGame';
 import { VoiceFab } from './components/Voice';
+import { JoinNotice } from './components/Spectate';
 import { screenAnim } from './components/ui';
 import { CAT } from './data/categories';
 import { THEME_BY_ID } from './data/themes';
@@ -262,6 +263,7 @@ export function App() {
       {online && VOICE_ON.includes(safe) && <VoiceFab />}
       <NetBanner />
       <ConnectionLost />
+      {online && <JoinNotice />}
       <UpdateBanner screen={safe} online={online} />
       <SceneCard title={title} />
       {REACT_ON.includes(safe) && (safe !== 'lobby' || online) && <ReactFab key={safe} onReact={react} />}

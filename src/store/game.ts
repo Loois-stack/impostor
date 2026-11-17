@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isElimChoice, type ElimChoice } from '../data/eliminations';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { CATEGORIES, HORROR_CATS } from '../data/categories';
 import { CH_BY_ID, type ChallengeKind } from '../data/challenges';
@@ -28,6 +29,8 @@ export interface Player {
   avatar: string;
   /** Sala: jugador sin teléfono propio; juega en el teléfono de este otro jugador. */
   owner?: string;
+  /** Animación con la que lo eliminan (o sorpresa). */
+  elim?: ElimChoice;
 }
 
 export interface Profile {
@@ -138,8 +141,8 @@ export interface Round {
   /** Sala: quienes piden votar. Con mayoría se vota al terminar la vuelta; si lo piden todos, ya. */
   voteCalls?: string[];
   /**
-   * Sala: reunión al terminar una vuelta. Todos discuten (con la llamada de voz si quieren) y la
-   * mayoría decide: votar ya (`voteCalls`) u otra vuelta de pistas (`moreCalls`). `ends`: hora límite.
+   * Reunión al terminar una vuelta: todos discuten. En sala la mayoría decide votar ya (`voteCalls`)
+   * u otra vuelta de pistas (`moreCalls`); con un solo teléfono decide quien lo tiene. `ends`: hora límite.
    */
   meeting?: { since: number; ends: number };
   /** Sala, en la reunión: quienes piden otra vuelta. */
@@ -225,6 +228,8 @@ interface State {
   removePlayer(id: string): void;
   movePlayer(id: string, dir: -1 | 1): void;
   setAvatar(id: string, avatar: string): void;
+  /** Elige la animación de eliminación de un jugador. */
+  setElim(id: string, elim: ElimChoice): void;
   setSettings(p: Partial<Settings>): void;
   newSession(): void;
   startRound(): void;
@@ -515,6 +520,7 @@ export const useGame = create<State>()(
       },
 
       setAvatar: (id, avatar) => set({ players: get().players.map((p) => (p.id === id ? { ...p, avatar } : p)) }),
+      setElim: (id, elim) => set({ players: get().players.map((p) => (p.id === id ? { ...p, elim } : p)) }),
 
       setSettings: (p) => set({ settings: { ...get().settings, ...p } }),
 
@@ -689,8 +695,8 @@ export const useGame = create<State>()(
         const lapDone = lap > cur.lap;
         if ((cur.laps > 0 && lap > cur.laps) || (lapDone && voteCallStatus(cur).ready))
           return set({ round: { ...cur, phase: 'vote', votes: {}, voteCalls: [], meeting: undefined, moreCalls: [] }, screen: 'vote' });
-        // En sala, al terminar la vuelta todos pasan a la reunión para discutir.
-        if (lapDone && get().online) {
+        // Al terminar la vuelta todos pasan a la reunión para discutir (en sala y pasando el teléfono).
+        if (lapDone) {
           const t = Date.now();
           return set({ round: { ...cur, lap, turn, meeting: { since: t, ends: t + MEETING_MS }, moreCalls: [] } });
         }
@@ -767,8 +773,9 @@ export const useGame = create<State>()(
       },
 
       settleMeeting(timeUp) {
-        const { round } = get();
-        if (link.guest || !round?.meeting || round.phase !== 'discuss') return;
+        const { round, online } = get();
+        // Con un solo teléfono decide quien lo tiene (no hay pedidos que contar).
+        if (link.guest || !online || !round?.meeting || round.phase !== 'discuss') return;
         const v = voteCallStatus(round);
         const m = moreCallStatus(round);
         if (v.ready) return get().openVote();
@@ -1111,6 +1118,8 @@ export const useGame = create<State>()(
             return a.as !== from && owns(a.as) && between ? s.removePlayer(a.as) : undefined;
           case 'avatar':
             return owns(a.as) && AVATAR_CHOICES.includes(a.avatar) ? s.setAvatar(a.as, a.avatar) : undefined;
+          case 'elim':
+            return owns(a.as) && isElimChoice(a.elim) ? s.setElim(a.as, a.elim) : undefined;
         }
         if (!round) return;
         const as = a.a === 'cursed' ? from : a.as ?? from;

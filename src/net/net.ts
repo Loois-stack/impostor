@@ -3,9 +3,10 @@ import { IN_ROUND, MAX_PLAYERS, syncCustom, useGame, type CustomCard, type Scree
 import { usePrefs } from '../store/prefs';
 import { clock } from './clock';
 import { REACTIONS, showReaction } from '../fx/reactions';
-import { clearRoomLaughs, setRoomLaugh } from '../audio/reactions';
-import { isLaugh } from '../audio/myLaugh';
+import { clearRoomSounds, hasReactionSound, setRoomSound } from '../audio/reactions';
+import { isSound } from '../audio/recordings';
 import { link, type NetAction } from './link';
+import type { ElimChoice } from '../data/eliminations';
 import { publicId, useNet } from './state';
 import { bindVoice, resetVoice, setRoster, useVoice, type VoiceEntry } from './voice';
 
@@ -22,7 +23,7 @@ import { bindVoice, resetVoice, setRoster, useVoice, type VoiceEntry } from './v
  * Es un juego entre amigos: el estado completo viaja a cada teléfono y no se cifra nada extra.
  */
 
-const PROTOCOL = 6;
+const PROTOCOL = 7;
 const PREFIX = 'impostor-quien-miente-';
 /** Sin letras ni números que se confundan al dictarlos (0/O, 1/I…). */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -39,7 +40,7 @@ type HostMsg =
   | { t: 'state'; s: Snapshot; now: number; present: string[]; voice: Record<string, VoiceEntry> }
   | { t: 'react'; e: string; from: string }
   /** La risa grabada de un teléfono (o que la borró). */
-  | { t: 'laugh'; from: string; d: string | null }
+  | { t: 'sound'; from: string; e: string; d: string | null }
   | { t: 'cards'; cards: CustomCard[] }
   | { t: 'deny'; reason: 'full' | 'version' }
   | { t: 'ping' }
@@ -51,7 +52,7 @@ type GuestMsg =
   /** Entró o salió de la llamada de voz, o abrió/silenció el micrófono. */
   | { t: 'voice'; on: boolean; mic: boolean }
   /** Su risa grabada (o que la borró). */
-  | { t: 'laugh'; d: string | null }
+  | { t: 'sound'; e: string; d: string | null }
   | { t: 'pong' }
   | { t: 'bye' };
 
@@ -123,7 +124,10 @@ let queued = false;
 /** Anfitrión: quiénes están en la llamada de voz. */
 const voiceRoster = new Map<string, VoiceEntry>();
 /** Anfitrión: la risa grabada de cada invitado. */
-const laughs = new Map<string, string>();
+const sounds = new Map<string, Map<string, string>>();
+
+/** Lo que cambió entre dos juegos de sonidos grabados (para mandar solo eso). */
+const changedSounds = (a: Record<string, string>, b: Record<string, string>) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((e) => a[e] !== b[e]);
 let unsubPrefs: (() => void) | null = null;
 
 const send = (c: DataConnection | null | undefined, m: HostMsg | GuestMsg) => {
@@ -148,8 +152,8 @@ function teardown() {
   lastSeen.clear();
   voiceRoster.clear();
   resetVoice();
-  laughs.clear();
-  clearRoomLaughs();
+  sounds.clear();
+  clearRoomSounds();
   unsubPrefs?.();
   unsubPrefs = null;
   hostConn = null;
@@ -209,7 +213,7 @@ function rosterChanged() {
 
 /** Un teléfono dejó la sala: también deja la llamada. */
 function forget(pid: string) {
-  laughs.delete(pid);
+  sounds.delete(pid);
   if (voiceRoster.delete(pid)) rosterChanged();
 }
 
@@ -231,9 +235,9 @@ function onGuest(conn: DataConnection) {
       lastSeen.set(pid, Date.now());
       send(conn, { t: 'cards', cards: useGame.getState().customCards });
       // Las risas grabadas de la sala (una por mensaje: cada una pesa unos 40 KB).
-      const mine = usePrefs.getState().laugh;
-      if (mine) send(conn, { t: 'laugh', from: publicId(usePrefs.getState().deviceId), d: mine });
-      for (const [from, d] of laughs) if (from !== pid) send(conn, { t: 'laugh', from, d });
+      const me = publicId(usePrefs.getState().deviceId);
+      for (const [e, d] of Object.entries(usePrefs.getState().sounds)) send(conn, { t: 'sound', from: me, e, d });
+      for (const [from, m] of sounds) if (from !== pid) for (const [e, d] of m) send(conn, { t: 'sound', from, e, d });
       schedule();
       return;
     }
@@ -242,12 +246,15 @@ function onGuest(conn: DataConnection) {
     lastGuestSeen = Date.now();
     if (m.t === 'act' && m.a && typeof m.a === 'object') useGame.getState().remote(pid, m.a);
     else if (m.t === 'react') relayReaction(m.e, pid);
-    else if (m.t === 'laugh') {
-      const d = isLaugh(m.d) ? m.d : null;
-      if (d) laughs.set(pid, d);
-      else laughs.delete(pid);
-      setRoomLaugh(pid, d);
-      for (const [id, c] of conns) if (id !== pid) send(c, { t: 'laugh', from: pid, d });
+    else if (m.t === 'sound') {
+      if (typeof m.e !== 'string' || !hasReactionSound(m.e)) return;
+      const d = isSound(m.d) ? m.d : null;
+      const mine = sounds.get(pid) ?? new Map<string, string>();
+      if (d) mine.set(m.e, d);
+      else mine.delete(m.e);
+      sounds.set(pid, mine);
+      setRoomSound(pid, m.e, d);
+      for (const [id, c] of conns) if (id !== pid) send(c, { t: 'sound', from: pid, e: m.e, d });
     } else if (m.t === 'voice') {
       if (m.on === true) voiceRoster.set(pid, { peer: conn.peer, mic: m.mic === true });
       else voiceRoster.delete(pid);
@@ -275,9 +282,9 @@ function onGuest(conn: DataConnection) {
 function hostLoop() {
   unsubPrefs?.();
   unsubPrefs = usePrefs.subscribe((s, prev) => {
-    if (s.laugh === prev.laugh) return;
+    if (s.sounds === prev.sounds) return;
     const from = publicId(s.deviceId);
-    for (const c of conns.values()) send(c, { t: 'laugh', from, d: s.laugh ?? null });
+    for (const e of changedSounds(s.sounds, prev.sounds)) for (const c of conns.values()) send(c, { t: 'sound', from, e, d: s.sounds[e] ?? null });
   });
   unsub?.();
   unsub = useGame.subscribe((s, prev) => {
@@ -409,8 +416,8 @@ function onHost(raw: unknown) {
     case 'react':
       if (REACTIONS.includes(m.e)) showReaction(m.e, m.from);
       break;
-    case 'laugh':
-      if (typeof m.from === 'string') setRoomLaugh(m.from, isLaugh(m.d) ? m.d : null);
+    case 'sound':
+      if (typeof m.from === 'string' && typeof m.e === 'string') setRoomSound(m.from, m.e, isSound(m.d) ? m.d : null);
       break;
     case 'ping':
       send(hostConn, { t: 'pong' });
@@ -440,8 +447,7 @@ function dial() {
     // Si ya estaba en la llamada (se reconectó), vuelve a avisar.
     const v = useVoice.getState();
     if (v.joined) send(c, { t: 'voice', on: true, mic: v.mic });
-    const laugh = usePrefs.getState().laugh;
-    if (laugh) send(c, { t: 'laugh', d: laugh });
+    for (const [e, d] of Object.entries(usePrefs.getState().sounds)) send(c, { t: 'sound', e, d });
   });
   c.on('data', onHost);
   const lost = () => hostConn === c && redial();
@@ -490,7 +496,7 @@ export async function joinRoom(rawCode: string, name: string) {
   peer = p;
   bindVoice(p, publicId(usePrefs.getState().deviceId), (on, mic) => send(hostConn, { t: 'voice', on, mic }));
   unsubPrefs = usePrefs.subscribe((s, prev) => {
-    if (s.laugh !== prev.laugh) send(hostConn, { t: 'laugh', d: s.laugh ?? null });
+    if (s.sounds !== prev.sounds) for (const e of changedSounds(s.sounds, prev.sounds)) send(hostConn, { t: 'sound', e, d: s.sounds[e] ?? null });
   });
   p.on('open', dial);
   p.on('disconnected', () => peer === p && redial());
@@ -580,6 +586,12 @@ export function removeLocalPlayer(id: string) {
 export function changeAvatar(id: string, avatar: string) {
   if (link.guest) return link.send({ a: 'avatar', as: id, avatar });
   useGame.getState().setAvatar(id, avatar);
+}
+
+/** Elige la animación de eliminación de un jugador de este teléfono. */
+export function changeElim(id: string, elim: ElimChoice) {
+  if (link.guest) return link.send({ a: 'elim', as: id, elim });
+  useGame.getState().setElim(id, elim);
 }
 
 // ------------------------------------------------------------------ Común

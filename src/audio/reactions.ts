@@ -6,7 +6,7 @@
  * todos los teléfonos. Los efectos (navaja, bocina, tambor, trombón…) se arman con Web Audio.
  */
 import { usePrefs } from '../store/prefs';
-import { decodeLaugh, isLaugh, LAUGH_RATE, resample } from './myLaugh';
+import { decodeSound, isSound, resample, SOUND_RATE } from './recordings';
 import { sfx, type Kit } from './sfx';
 import { render, type Take } from './voicebox';
 import * as V from './voices';
@@ -14,7 +14,7 @@ import * as V from './voices';
 type R = () => number;
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
-function output(k: Kit, node: AudioNode, wet: number, pan = 0) {
+export function output(k: Kit, node: AudioNode, wet: number, pan = 0) {
   let out = node;
   if (pan && k.ctx.createStereoPanner) {
     const p = k.ctx.createStereoPanner();
@@ -57,7 +57,7 @@ interface ToneOpts {
   wet?: number;
 }
 
-function tone(k: Kit, { type = 'sine', f, f2, at = 0, dur, vol, attack = 0.005, pan, wet = 0.15 }: ToneOpts) {
+export function tone(k: Kit, { type = 'sine', f, f2, at = 0, dur, vol, attack = 0.005, pan, wet = 0.15 }: ToneOpts) {
   const { ctx } = k;
   const t = ctx.currentTime + 0.01 + at;
   const o = ctx.createOscillator();
@@ -88,7 +88,7 @@ interface HissOpts {
   wet?: number;
 }
 
-function hiss(k: Kit, { filter = 'bandpass', f, f2, q = 1, at = 0, dur, vol, attack = 0.004, pan, wet = 0.15 }: HissOpts) {
+export function hiss(k: Kit, { filter = 'bandpass', f, f2, q = 1, at = 0, dur, vol, attack = 0.004, pan, wet = 0.15 }: HissOpts) {
   const { ctx } = k;
   const t = ctx.currentTime + 0.01 + at;
   const src = ctx.createBufferSource();
@@ -109,7 +109,7 @@ function hiss(k: Kit, { filter = 'bandpass', f, f2, q = 1, at = 0, dur, vol, att
 }
 
 /** Muchos golpecitos de ruido con un solo filtro (aplausos, chasquidos del fuego). */
-function clicks(k: Kit, hits: { at: number; vol: number; dur: number; burst?: boolean }[], f: number, q: number, pan: number, wet = 0.2, type: BiquadFilterType = 'bandpass') {
+export function clicks(k: Kit, hits: { at: number; vol: number; dur: number; burst?: boolean }[], f: number, q: number, pan: number, wet = 0.2, type: BiquadFilterType = 'bandpass') {
   const { ctx } = k;
   const t0 = ctx.currentTime + 0.01;
   const fl = ctx.createBiquadFilter();
@@ -511,41 +511,48 @@ if (typeof window !== 'undefined')
     else warm();
   }, 4000);
 
-// ---------------------------------------------------------------- Risas grabadas
+// ---------------------------------------------------------------- Sonidos grabados
 
-/** Sala: la risa grabada de cada teléfono (solo en memoria, mientras dure la sala). */
-const roomLaughs = new Map<string, string>();
+/** Sala: los sonidos grabados de cada teléfono, por reacción (solo en memoria, mientras dure la sala). */
+const roomSounds = new Map<string, Map<string, string>>();
 const decoded = new Map<string, Float32Array>();
 
-/** Sala: llegó (o se borró) la risa grabada de un teléfono. */
-export function setRoomLaugh(pid: string, d: string | null) {
-  if (d && isLaugh(d)) roomLaughs.set(pid, d);
-  else roomLaughs.delete(pid);
+/** Sala: llegó (o se borró) un sonido grabado de un teléfono. */
+export function setRoomSound(pid: string, e: string, d: string | null) {
+  if (!hasReactionSound(e)) return;
+  const mine = roomSounds.get(pid) ?? new Map<string, string>();
+  if (d && isSound(d)) mine.set(e, d);
+  else mine.delete(e);
+  if (mine.size) roomSounds.set(pid, mine);
+  else roomSounds.delete(pid);
 }
 
-/** Para pruebas: de quién tenemos risa grabada. */
-export const roomLaughIds = () => [...roomLaughs.keys()];
+/** Para pruebas: qué sonidos grabados tenemos de cada teléfono. */
+export const roomSoundIds = () => Object.fromEntries([...roomSounds].map(([pid, m]) => [pid, [...m.keys()]]));
 
-/** Al salir de la sala se olvidan las risas de los demás. */
-export const clearRoomLaughs = () => {
-  roomLaughs.clear();
+/** Al salir de la sala se olvidan los sonidos de los demás. */
+export const clearRoomSounds = () => {
+  roomSounds.clear();
   decoded.clear();
 };
 
-/** Toca una risa grabada (un poquito distinta cada vez). */
-function playLaugh(k: Kit, d: string) {
+/** El sonido grabado que le toca a una reacción: el tuyo, o el de quien la mandó en la sala. */
+export const recordedFor = (e: string, who?: string, mine = !who) => (mine ? usePrefs.getState().sounds[e] : who ? roomSounds.get(who)?.get(e) : undefined);
+
+/** Toca un sonido grabado (un poquito distinto cada vez). */
+function playRecorded(k: Kit, d: string) {
   let x = decoded.get(d);
   if (!x) {
-    // Se sube a 24 kHz para que cualquier navegador la pueda tocar.
-    x = resample(decodeLaugh(d), LAUGH_RATE, 24000);
-    if (decoded.size > 30) decoded.clear();
+    // Se sube a 24 kHz para que cualquier navegador lo pueda tocar.
+    x = resample(decodeSound(d), SOUND_RATE, 24000);
+    if (decoded.size > 40) decoded.clear();
     decoded.set(d, x);
   }
   const buf = k.ctx.createBuffer(1, x.length, 24000);
   buf.getChannelData(0).set(x);
   const src = k.ctx.createBufferSource();
   src.buffer = buf;
-  src.playbackRate.value = 0.95 + Math.random() * 0.12;
+  src.playbackRate.value = 0.96 + Math.random() * 0.1;
   const g = k.ctx.createGain();
   g.gain.value = 0.55;
   src.connect(g);
@@ -566,8 +573,8 @@ export function reactionSound(e: string, who?: string, preview = false, mine = !
   const k = sfx.kit();
   const name = BY_EMOJI[e];
   if (!k || !name) return false;
-  // Si quien se ríe grabó su risa, su 😂 suena con ella.
-  const recorded = e === '😂' ? (mine ? usePrefs.getState().laugh : who ? roomLaughs.get(who) : undefined) : undefined;
+  // Si quien la mandó grabó su propio sonido para esta reacción, suena con su voz.
+  const recorded = recordedFor(e, who, mine);
   const now = k.ctx.currentTime;
   busy = busy.filter((b) => b.until > now);
   if (!preview && (busy.length >= 3 || now - (last.get(e) ?? -9) < 0.25)) return false;
@@ -575,7 +582,7 @@ export function reactionSound(e: string, who?: string, preview = false, mine = !
   const slot = { until: now + 2 };
   busy.push(slot);
   if (recorded) {
-    slot.until = now + playLaugh(k, recorded);
+    slot.until = now + playRecorded(k, recorded);
     return true;
   }
   const voiceName = typeof name === 'function' ? name(Math.random) : name;

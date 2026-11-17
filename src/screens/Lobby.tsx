@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { ElimPicker } from '../components/Elimination';
 import { Emo } from '../components/Emo';
 import { useState } from 'react';
 import { haptic, sfx } from '../audio/sfx';
@@ -260,7 +261,7 @@ export function Lobby() {
       </Sheet>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)}>
-        <div className="h2">Elige un avatar</div>
+        <div className="h2">Avatar y eliminación</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
           {AVATAR_CHOICES.map((a) => (
             <motion.button
@@ -277,6 +278,7 @@ export function Lobby() {
             </motion.button>
           ))}
         </div>
+        {editing && players.some((p) => p.id === editing) && <ElimPicker player={players.find((p) => p.id === editing)!} />}
       </Sheet>
     </div>
   );

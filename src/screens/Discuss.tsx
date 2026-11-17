@@ -7,6 +7,7 @@ import { EventOverlay } from '../components/EventOverlay';
 import { LeaveSheet } from '../components/LeaveGame';
 import { Meeting } from '../components/Meeting';
 import { useTalking } from '../components/Voice';
+import { SpectatorCard, useSpectator } from '../components/Spectate';
 import { PlayerCard } from '../components/PlayerCard';
 import { VoteCallBar, VoteCallButton } from '../components/VoteCall';
 import { Avatar, Button, Glitch, IconButton, Overlay, Sheet } from '../components/ui';
@@ -198,8 +199,10 @@ export function Discuss() {
   // Efectos públicos que duran toda la ronda (acentos, reglas…), de quien no está en turno.
   const effects = round.order.filter((id) => id !== pid && activeTurnEvent(round, id)?.round);
   const missions = Object.keys(round.missions).length;
-  // Sala: al terminar cada vuelta, reunión para discutir (sin turnos).
-  const meeting = online && !!round.meeting;
+  // Al terminar cada vuelta, reunión para discutir (sin turnos).
+  const meeting = !!round.meeting;
+  // Sala: este teléfono solo mira (entró a media ronda o ya lo eliminaron).
+  const spectator = useSpectator();
 
   const onTimeUp = () => {
     setTimeUp(true);
@@ -348,6 +351,11 @@ export function Discuss() {
         </div>
       )}
 
+      {spectator && !meeting && (
+        <div className="content" style={{ marginBottom: 6 }}>
+          <SpectatorCard kind={spectator} />
+        </div>
+      )}
       {meeting ? (
         <Meeting key={round.meeting!.since} seats={myRoundSeats} />
       ) : (
@@ -616,7 +624,7 @@ export function Discuss() {
             🗳️ Votar ya, sin esperar
           </Button>
         )}
-        {host && meeting && (
+        {host && online && meeting && (
           <Button
             variant="ghost"
             small

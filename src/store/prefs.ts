@@ -14,8 +14,10 @@ interface Prefs {
   music: boolean;
   vibration: boolean;
   reactSound: ReactSound;
-  /** Tu risa grabada (comprimida); si existe, tu 😂 suena con ella. */
-  laugh?: string;
+  /** Ver la animación cuando eliminan a alguien. */
+  elimFx: boolean;
+  /** Tus sonidos grabados (comprimidos), por reacción: si existe, esa reacción suena con tu voz. */
+  sounds: Record<string, string>;
   skin: Skin;
   /** Identidad estable del teléfono en las salas (para reconectarse sin perder el lugar). */
   deviceId: string;
@@ -48,12 +50,28 @@ export const usePrefs = create<Prefs>()(
       music: true,
       vibration: true,
       reactSound: 'all',
+      elimFx: true,
+      sounds: {},
       skin: 'neon',
       deviceId: randomId(),
       name: '',
       ...legacy(),
       set: (p) => set(p),
     }),
-    { name: 'impostor-prefs', version: 1 },
+    {
+      name: 'impostor-prefs',
+      version: 2,
+      // v2: la risa grabada pasó a ser uno de "tus sonidos" (uno por reacción).
+      migrate: (state, version) => {
+        const st = (state ?? {}) as Partial<Prefs> & { laugh?: string };
+        if (version < 2) {
+          const sounds = { ...(st.sounds ?? {}) };
+          if (st.laugh) sounds['😂'] = st.laugh;
+          delete st.laugh;
+          return { ...st, sounds } as Prefs;
+        }
+        return st as Prefs;
+      },
+    },
   ),
 );

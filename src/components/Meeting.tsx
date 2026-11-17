@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { burst, shake } from '../fx/fx';
 import { now } from '../net/clock';
 import { useSeat } from '../net/state';
 import { MEETING_MS, moreCallStatus, useGame, voteCallStatus, votersOf, type Player } from '../store/game';
-import { Avatar } from './ui';
+import { Avatar, Button } from './ui';
+import { SpectatorCard, useSpectator } from './Spectate';
 import { useMicState, useTalking, VoiceControls } from './Voice';
 import { CallButton } from './VoteCall';
 
@@ -49,15 +50,18 @@ function useLeft(ends: number) {
 }
 
 /**
- * Sala: reunión al terminar cada vuelta. Todos discuten (con la llamada de voz, si quieren) y la
- * mayoría decide: otra vuelta de pistas o votar ya.
+ * Reunión al terminar cada vuelta. En sala todos discuten (con la llamada de voz, si quieren) y la
+ * mayoría decide otra vuelta de pistas o votar ya; pasando el teléfono, la mesa decide en voz alta.
  */
 export function Meeting({ seats }: { seats: string[] }) {
   const round = useGame((s) => s.round)!;
   const players = useGame((s) => s.players);
   const settleMeeting = useGame((s) => s.settleMeeting);
-  const { host } = useSeat();
+  const { host, online } = useSeat();
+  const endMeeting = useGame((s) => s.endMeeting);
+  const openVote = useGame((s) => s.openVote);
   const m = round.meeting!;
+  const spectator = useSpectator();
   const left = useLeft(m.ends);
   const [splash, setSplash] = useState(true);
   const v = voteCallStatus(round);
@@ -81,12 +85,12 @@ export function Meeting({ seats }: { seats: string[] }) {
     return () => clearTimeout(t);
   }, [m.since]);
 
-  // El anfitrión cierra la reunión cuando se acaba el tiempo.
+  // En sala, el anfitrión cierra la reunión cuando se acaba el tiempo (pasando el teléfono decide la mesa).
   useEffect(() => {
-    if (!host) return;
+    if (!host || !online) return;
     const t = setTimeout(() => settleMeeting(true), Math.max(0, m.ends - Date.now()) + 200);
     return () => clearTimeout(t);
-  }, [host, m.ends, settleMeeting]);
+  }, [host, online, m.ends, settleMeeting]);
 
   // Últimos segundos: tic tac.
   useEffect(() => {
@@ -128,35 +132,69 @@ export function Meeting({ seats }: { seats: string[] }) {
           ))}
         </div>
 
-        <div className="panel stack" style={{ gap: 8, padding: 12 }}>
-          <div className="label">📞 Hablen por el micrófono</div>
-          <VoiceControls big />
-        </div>
-
-        <div className="mt-tally">
-          <span>
-            ▶ <b>{more.calls.length}</b> otra vuelta
-          </span>
-          <span className="dim">
-            Con {v.need} de {v.total} se decide
-          </span>
-          <span>
-            🗳️ <b>{v.calls.length}</b> votar
-          </span>
-        </div>
-        {playing ? (
-          <div className="row" style={{ gap: 8 }}>
-            <CallButton kind="more" seats={seats} style={{ flex: 1, fontSize: 19 }} />
-            <CallButton kind="vote" seats={seats} style={{ flex: 1, fontSize: 19 }} />
-          </div>
-        ) : (
-          <div className="dim center" style={{ fontSize: 13 }}>
-            Ya no juegas esta ronda: solo puedes escuchar y opinar.
-          </div>
+        {!online && (
+          <>
+            <div className="panel center" style={{ gap: 4, padding: 12 }}>
+              <b>{secs > 0 ? 'Discutan en voz alta' : '⏰ ¡Se acabó el tiempo!'}</b>
+              <div className="dim" style={{ fontSize: 13, lineHeight: 1.4 }}>
+                {secs > 0 ? '¿Alguien dijo algo raro? ¿Quién dudó? Cuando decidan, toquen un botón.' : 'Decidan ya: otra vuelta de pistas o votar.'}
+              </div>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <Button
+                onClick={() => {
+                  sfx.whoosh();
+                  endMeeting();
+                }}
+                style={{ flex: 1, fontSize: 19, '--accent': '#1fbf6b' } as CSSProperties}
+              >
+                ▶ Otra vuelta
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  sfx.stamp();
+                  openVote();
+                }}
+                style={{ flex: 1, fontSize: 19 }}
+              >
+                🗳️ Votar
+              </Button>
+            </div>
+          </>
         )}
-        <div className="dim center" style={{ fontSize: 11.5 }}>
-          Si se acaba el tiempo, gana lo que más se pidió; si empatan, se juega otra vuelta.
-        </div>
+
+        {online && (
+          <>
+            <div className="panel stack" style={{ gap: 8, padding: 12 }}>
+              <div className="label">📞 Hablen por el micrófono</div>
+              <VoiceControls big />
+            </div>
+
+            <div className="mt-tally">
+              <span>
+                ▶ <b>{more.calls.length}</b> otra vuelta
+              </span>
+              <span className="dim">
+                Con {v.need} de {v.total} se decide
+              </span>
+              <span>
+                🗳️ <b>{v.calls.length}</b> votar
+              </span>
+            </div>
+            {playing ? (
+              <div className="row" style={{ gap: 8 }}>
+                <CallButton kind="more" seats={seats} style={{ flex: 1, fontSize: 19 }} />
+                <CallButton kind="vote" seats={seats} style={{ flex: 1, fontSize: 19 }} />
+              </div>
+            ) : (
+              spectator && <SpectatorCard kind={spectator} />
+            )}
+            <div className="dim center" style={{ fontSize: 11.5 }}>
+              Si se acaba el tiempo, gana lo que más se pidió; si empatan, se juega otra vuelta.
+            </div>
+          </>
+        )}
       </motion.div>
     </div>
   );

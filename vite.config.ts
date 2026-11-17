@@ -66,7 +66,7 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,mp4}'],
         runtimeCaching: [
           {
             // Las fotos se piden con CORS: así se guarda la imagen real y no una respuesta opaca.

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
+import { ElimPicker } from '../components/Elimination';
 import { useEffect, useRef, useState } from 'react';
-import { canRecord, recordLaugh, type Recording } from '../audio/myLaugh';
+import { canRecord, recordSound, type Recording } from '../audio/recordings';
 import { reactionSound } from '../audio/reactions';
 import { haptic, sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
@@ -16,26 +17,47 @@ import { AVATAR_CHOICES, useGame } from '../store/game';
 import { publicId } from '../net/state';
 import { usePrefs } from '../store/prefs';
 
-/** Graba tu propia risa: tu 😂 suena con ella (en una sala, en todos los teléfonos). */
-function LaughRecorder() {
-  const laugh = usePrefs((s) => s.laugh);
+/** Qué decirle a quien graba, según la reacción. */
+const REC_HINT: Record<string, string> = {
+  '😂': '¡ríete!',
+  '🤣': '¡carcajada!',
+  '😱': '¡grita!',
+  '😭': '¡llora!',
+  '🐔': '¡cacarea!',
+  '😴': '¡ronca!',
+  '🤫': '¡shhh!',
+  '👏': '¡aplaude!',
+  '🫵': '¡acusa!',
+  '🤔': '¡piénsale!',
+};
+
+/** Graba tu voz para una reacción: esa reacción suena con ella (en una sala, en todos los teléfonos). */
+function SoundRecorder({ e }: { e: string }) {
+  const mine = usePrefs((s) => s.sounds[e]);
   const set = usePrefs((s) => s.set);
   const [rec, setRec] = useState<Recording | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [err, setErr] = useState<string>();
+  useEffect(() => setErr(undefined), [e]);
   const play = () => {
     sfx.unlock();
-    floatReaction('😂');
-    reactionSound('😂', undefined, true, true);
+    floatReaction(e);
+    reactionSound(e, undefined, true, true);
+  };
+  const save = (d: string | undefined) => {
+    const sounds = { ...usePrefs.getState().sounds };
+    if (d) sounds[e] = d;
+    else delete sounds[e];
+    set({ sounds });
   };
   const start = async () => {
     setErr(undefined);
     sfx.unlock();
     let r: Recording;
     try {
-      r = await recordLaugh();
-    } catch (e) {
-      const denied = (e as DOMException)?.name === 'NotAllowedError';
+      r = await recordSound();
+    } catch (x) {
+      const denied = (x as DOMException)?.name === 'NotAllowedError';
       return setErr(denied ? 'No diste permiso para usar el micrófono. Actívalo en los permisos del navegador.' : 'No se pudo abrir el micrófono.');
     }
     haptic(20);
@@ -44,9 +66,9 @@ function LaughRecorder() {
     const id = window.setInterval(() => setElapsed((Date.now() - t0) / 1000), 100);
     try {
       const d = await r.done;
-      if (!d) setErr('No se oyó nada. Acércate al micrófono y ríete con ganas.');
+      if (!d) setErr('No se oyó nada. Acércate al micrófono y hazlo con ganas.');
       else {
-        set({ laugh: d });
+        save(d);
         setTimeout(play, 150);
       }
     } catch {
@@ -57,19 +79,23 @@ function LaughRecorder() {
       setElapsed(0);
     }
   };
-  if (!canRecord()) return null;
   return (
     <div className="laugh-rec stack" style={{ gap: 8 }}>
-      <b>🎤 Tu propia risa</b>
-      <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
-        Graba tu risa (hasta 3 segundos) y tu 😂 sonará con tu voz de verdad. Se guarda en este teléfono y en una sala solo la oyen quienes están en ella.
+      <div className="row" style={{ gap: 10 }}>
+        <span style={{ fontSize: 36 }}>{e}</span>
+        <div className="grow" style={{ minWidth: 0 }}>
+          <b>{mine ? 'Suena con tu voz' : 'Suena con el sonido del juego'}</b>
+          <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.35 }}>
+            {mine ? 'En una sala, todos oyen tu grabación cuando la mandas.' : `Graba tu voz (hasta 3 segundos) para que ${e} suene como tú.`}
+          </div>
+        </div>
       </div>
       {rec ? (
         <Button variant="danger" onClick={() => rec.stop()} className="rec-btn">
-          <span className="rec-dot" /> Grabando… ¡ríete! · {Math.max(0, 3 - elapsed).toFixed(1)} s
+          <span className="rec-dot" /> Grabando… {REC_HINT[e] ?? '¡ahora!'} · {Math.max(0, 3 - elapsed).toFixed(1)} s
           <span className="rec-bar" style={{ width: `${Math.min(100, (elapsed / 3) * 100)}%` }} />
         </Button>
-      ) : laugh ? (
+      ) : mine ? (
         <div className="row" style={{ gap: 6 }}>
           <Button small onClick={play} style={{ flex: 1 }}>
             ▶ Escuchar
@@ -77,12 +103,12 @@ function LaughRecorder() {
           <Button small variant="ghost" onClick={() => void start()} style={{ flex: 1 }}>
             🔁 Otra vez
           </Button>
-          <Button small variant="ghost" onClick={() => set({ laugh: undefined })} style={{ flex: 1 }}>
-            🗑️ Borrar
+          <Button small variant="ghost" onClick={() => save(undefined)} style={{ flex: 1 }}>
+            🗑️ Quitar
           </Button>
         </div>
       ) : (
-        <Button onClick={() => void start()}>🎙️ Grabar mi risa</Button>
+        <Button onClick={() => void start()}>🎙️ Grabar mi voz para {e}</Button>
       )}
       {err && (
         <div className="dim" style={{ fontSize: 12.5, color: '#ff8a9a' }}>
@@ -93,16 +119,19 @@ function LaughRecorder() {
   );
 }
 
-/** Sonidos de las reacciones: cuáles suenan en este teléfono y un tablero para probarlos. */
+/** Sonidos de las reacciones: cuáles suenan en este teléfono, probarlos y grabar los tuyos. */
 function ReactionSounds() {
   const mode = usePrefs((s) => s.reactSound);
   const sound = usePrefs((s) => s.sound);
+  const sounds = usePrefs((s) => s.sounds);
   const set = usePrefs((s) => s.set);
+  const [pick, setPick] = useState('😂');
+  const recorded = Object.keys(sounds).length;
   return (
     <div className="panel stack" style={{ gap: 8 }}>
       <b>😂 Sonidos de las reacciones</b>
       <div className="dim" style={{ fontSize: 13, lineHeight: 1.4 }}>
-        Cada reacción tiene su propio sonido, hecho desde cero en el teléfono (sin grabaciones). Cada jugador tiene su propia voz y la risa nunca sale igual dos veces. En una sala lo oyen todos.
+        Cada reacción tiene su propio sonido, hecho desde cero en el teléfono. Cada jugador tiene su propia voz y la risa nunca sale igual dos veces. También puedes grabar tu voz para cada una. En una sala lo oyen todos.
       </div>
       <Segmented
         id="reactSound"
@@ -119,8 +148,11 @@ function ReactionSounds() {
           <motion.button
             key={e}
             whileTap={{ scale: 1.3 }}
+            className={`${pick === e ? 'on' : ''} ${sounds[e] ? 'rec' : ''}`}
             aria-label={`Escuchar ${e}`}
+            aria-pressed={pick === e}
             onClick={() => {
+              setPick(e);
               sfx.unlock();
               floatReaction(e);
               if (!reactionSound(e, publicId(usePrefs.getState().deviceId), true, true)) sfx.select();
@@ -131,9 +163,9 @@ function ReactionSounds() {
         ))}
       </div>
       <div className="dim" style={{ fontSize: 12 }}>
-        {sound ? 'Toca uno para escucharlo: así suena tu voz en una sala.' : 'Prende los efectos de sonido para escucharlos.'}
+        {sound ? `Toca uno para escucharlo y elegirlo.${recorded ? ` 🎤 = con tu voz (${recorded}).` : ''}` : 'Prende los efectos de sonido para escucharlos.'}
       </div>
-      <LaughRecorder />
+      {canRecord() && <SoundRecorder e={pick} />}
     </div>
   );
 }
@@ -277,6 +309,13 @@ export function SettingsScreen() {
           />
           <Toggle emoji="🎵" on={prefs.music} onChange={(music) => prefs.set({ music })} title="Música de fondo" desc="Generada en vivo: cambia en el menú, la partida, la votación y el terror." />
           <Toggle emoji="📳" on={prefs.vibration} onChange={(vibration) => prefs.set({ vibration })} title="Vibración" />
+          <Toggle
+            emoji="🎬"
+            on={prefs.elimFx}
+            onChange={(elimFx) => prefs.set({ elimFx })}
+            title="Animaciones de eliminación"
+            desc="Rayo, agujero negro, piñata o cohete. Cada jugador elige la suya tocando su avatar."
+          />
           <ReactionSounds />
 
           <OfflinePanel />
@@ -353,7 +392,7 @@ export function SettingsScreen() {
       </Sheet>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)}>
-        <div className="h2">Elige un avatar</div>
+        <div className="h2">Avatar y eliminación</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
           {AVATAR_CHOICES.map((a) => (
             <motion.button
@@ -370,6 +409,7 @@ export function SettingsScreen() {
             </motion.button>
           ))}
         </div>
+        {editing && players.some((p) => p.id === editing) && <ElimPicker player={players.find((p) => p.id === editing)!} />}
       </Sheet>
     </div>
   );

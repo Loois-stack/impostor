@@ -192,6 +192,22 @@ describe('sala: pedir votación y salir de la partida', () => {
     expect(g().players.map((p) => p.name).sort()).toEqual(['Luis', 'Paz', 'Sol', 'Uri']);
   });
 
+  it('quien entra con la ronda empezada mira como espectador y juega en la siguiente', () => {
+    toDiscuss();
+    expect(g().joinPlayer('g5', 'Ana')).toBe(true);
+    const ana = id('Ana');
+    // No tiene carta, ni turno, ni voto en esta ronda.
+    expect(round().order).not.toContain(ana);
+    expect(votersOf(round())).not.toContain(ana);
+    g().remote('g5', { a: 'callVote', on: true });
+    expect(round().voteCalls ?? []).not.toContain(ana);
+    g().openVote();
+    g().vote([id('Sol')], false);
+    g().finishRound();
+    g().startRound();
+    expect(round().order).toContain(ana);
+  });
+
   describe('reunión al terminar la vuelta', () => {
     it('al terminar la vuelta todos pasan a la reunión y ya no corren turnos', () => {
       toDiscuss();
@@ -299,12 +315,32 @@ describe('sala: pedir votación y salir de la partida', () => {
       expect(round().meeting!.ends - ends).toBeGreaterThanOrEqual(30000);
     });
 
-    it('con un solo teléfono no hay reunión', () => {
+    it('pasando el teléfono también hay reunión y decide quien lo tiene', () => {
       useGame.setState({ online: false });
       toDiscuss();
       finishLap();
       expect(round().lap).toBe(2);
+      expect(round().meeting).toBeDefined();
+      // No se cuentan pedidos ni se decide sola al acabarse el tiempo.
+      g().settleMeeting(true);
+      expect(round().meeting).toBeDefined();
+      g().endMeeting();
       expect(round().meeting).toBeUndefined();
+      finishLap();
+      expect(round().meeting).toBeDefined();
+      g().openVote();
+      expect(g().screen).toBe('vote');
+    });
+
+    it('con número de vueltas fijo, la última vuelta va directo a votar', () => {
+      useGame.setState({ online: false });
+      g().setSettings({ laps: 2 });
+      toDiscuss();
+      finishLap();
+      expect(round().meeting).toBeDefined();
+      g().endMeeting();
+      finishLap();
+      expect(g().screen).toBe('vote');
     });
   });
 });

@@ -203,7 +203,7 @@ export function Vote() {
             <Emo e={voted ? '🗳️' : canVote ? '🤔' : '👻'} anim={voted ? 'jelly' : undefined} />
           </div>
           <div className="h2">
-            {voted ? (myVoters.length > 1 ? 'Votos enviados' : 'Voto enviado') : !round.order.some((id) => seats.includes(id)) ? 'Solo observas esta ronda' : 'Estás fuera: ya no votas'}
+            {voted ? (myVoters.length > 1 ? 'Votos enviados' : 'Voto enviado') : !round.order.some((id) => seats.includes(id)) ? '👀 Modo espectador: juegas en la siguiente ronda' : '💀 Te eliminaron: ahora eres espectador'}
           </div>
           <VotedStrip players={players} alive={voters} votes={round.votes} present={present} />
         </div>

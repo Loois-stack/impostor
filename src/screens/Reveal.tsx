@@ -1,7 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { EliminationCutscene } from '../components/Elimination';
+import { elimFor } from '../data/eliminations';
+import { usePrefs } from '../store/prefs';
 import { emojiRain } from '../fx/scene';
 import { Emo } from '../components/Emo';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { haptic, sfx } from '../audio/sfx';
 import { MiniCard } from '../components/MiniCard';
 import { Avatar, Button, Glitch } from '../components/ui';
@@ -90,6 +93,9 @@ export function Reveal() {
   const { host } = useSeat();
   // El suspenso es una animación local; el resto de pasos los marca el store (y así van a la par en sala).
   const [suspense, setSuspense] = useState(round.step === 'verdict');
+  // Animación de eliminación de cada acusado (una tras otra) antes del veredicto.
+  const [cut, setCut] = useState<string[] | null>(null);
+  const elimFx = usePrefs((s) => s.elimFx);
   const phase = round.step === 'verdict' && suspense ? 'suspense' : round.step;
 
   const P = (id: string) => players.find((p) => p.id === id)!;
@@ -124,6 +130,8 @@ export function Reveal() {
     return rng.shuffle([civil, ...pool.slice(0, 5)]);
   }, [round.n, round.civil, round.decoy, round.decoys, round.theme, civil]);
 
+  const afterCut = useRef<() => void>(() => setSuspense(false));
+
   // Suspenso -> veredicto (una vez por votación).
   useEffect(() => {
     if (round.step !== 'verdict') return;
@@ -131,7 +139,7 @@ export function Reveal() {
     const long = round.lastTally ? 3400 : 2300;
     sfx.drumroll(long / 1000 - 0.1);
     const beats = [0, 700, 1400].map((t) => setTimeout(() => haptic(30), t));
-    const t = setTimeout(() => {
+    const verdict = () => {
       setSuspense(false);
       if (round.nobodyVote) {
         if (correctNobody) {
@@ -159,6 +167,13 @@ export function Reveal() {
         flash(tie ? '#ffd23d' : '#2ee6ff', 500, 0.4);
         shake(10, 400);
       }
+    };
+    afterCut.current = verdict;
+    const t = setTimeout(() => {
+      // Antes de saber si era el impostor: la animación de eliminación de cada acusado.
+      const victims = !round.nobodyVote && elimFx ? lastVote.slice(0, 3) : [];
+      if (victims.length) setCut(victims);
+      else verdict();
     }, long);
     return () => {
       clearTimeout(t);
@@ -199,6 +214,20 @@ export function Reveal() {
 
   return (
     <div className="screen">
+      <AnimatePresence>
+        {cut && cut.length > 0 && (
+          <EliminationCutscene
+            key={`${round.voteN}-${cut[0]}`}
+            player={P(cut[0])}
+            style={elimFor(P(cut[0]).elim, `${round.n}-${round.voteN}-${cut[0]}`)}
+            onDone={() => {
+              const rest = cut.slice(1);
+              setCut(rest.length ? rest : null);
+              if (!rest.length) afterCut.current();
+            }}
+          />
+        )}
+      </AnimatePresence>
       <AnimatePresence mode="wait">
         {phase === 'suspense' && (
           <motion.div key={`s${round.voteN}`} className="grow center content" style={{ gap: 20 }} exit={{ opacity: 0, scale: 1.3 }}>
