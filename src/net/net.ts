@@ -23,7 +23,7 @@ import { bindVoice, resetVoice, setRoster, useVoice, type VoiceEntry } from './v
  * Es un juego entre amigos: el estado completo viaja a cada teléfono y no se cifra nada extra.
  */
 
-const PROTOCOL = 7;
+const PROTOCOL = 8;
 const PREFIX = 'impostor-quien-miente-';
 /** Sin letras ni números que se confundan al dictarlos (0/O, 1/I…). */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

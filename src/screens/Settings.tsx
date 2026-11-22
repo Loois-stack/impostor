@@ -314,7 +314,7 @@ export function SettingsScreen() {
             on={prefs.elimFx}
             onChange={(elimFx) => prefs.set({ elimFx })}
             title="Animaciones de eliminación"
-            desc="Rayo, agujero negro, piñata o cohete. Cada jugador elige la suya tocando su avatar."
+            desc="Rayo, agujero negro, piñata, cohete, platillo volador o hielo. Cada jugador elige la suya tocando su avatar."
           />
           <ReactionSounds />
 

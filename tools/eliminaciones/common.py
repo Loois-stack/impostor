@@ -100,6 +100,17 @@ def key_strength(em, pairs):
         em.inputs['Strength'].keyframe_insert('default_value', frame=f)
 
 
+_eps = [0]
+
+
+def nudge(o):
+    """Separa un poquito cada objeto en profundidad: dos superficies transparentes en el mismo plano
+    hacen que Cycles se salte una al azar (salen triángulos con orillas duras)."""
+    _eps[0] += 1
+    o.location.y += (_eps[0] % 60) * 0.0004
+    return o
+
+
 def link(obj):
     bpy.context.scene.collection.objects.link(obj)
     return obj
@@ -112,7 +123,7 @@ def plane(name, w, h, loc, mat, rot_x=math.pi / 2):
     o.name = name
     o.scale = (w, h, 1)
     o.data.materials.append(mat)
-    return o
+    return nudge(o)
 
 
 def disc(name, r, loc, mat, verts=48):
@@ -120,7 +131,7 @@ def disc(name, r, loc, mat, verts=48):
     o = bpy.context.object
     o.name = name
     o.data.materials.append(mat)
-    return o
+    return nudge(o)
 
 
 def ring(name, r, thick, loc, mat):
@@ -128,10 +139,10 @@ def ring(name, r, thick, loc, mat):
     o = bpy.context.object
     o.name = name
     o.data.materials.append(mat)
-    return o
+    return nudge(o)
 
 
-def gradient_bg(name, stops, y=20, w=12, h=22):
+def gradient_bg(name, stops, y=20, w=12, h=22, z=0.0):
     """Fondo vertical con degradado: stops = [(posición 0..1 de abajo a arriba, (r, g, b)), ...]."""
     m, nt, out = node_mat(name)
     tc = nt.nodes.new('ShaderNodeTexCoord')
@@ -148,7 +159,7 @@ def gradient_bg(name, stops, y=20, w=12, h=22):
         e.color = (*col, 1)
     nt.links.new(ramp.outputs['Color'], em.inputs['Color'])
     nt.links.new(em.outputs[0], out.inputs['Surface'])
-    return plane(name, w, h, (0, y, 0), m), em
+    return plane(name, w, h, (0, y, z), m), em
 
 
 def noise_cloud_mat(name, color, density=1.0, scale=2.0, detail=6.0, strength=1.0, edge=1.0):
@@ -197,8 +208,14 @@ def noise_cloud_mat(name, color, density=1.0, scale=2.0, detail=6.0, strength=1.
 class Particles:
     """Partículas simuladas en Python: cada una es un objeto con posición, tamaño y color con alfa animados."""
 
-    def __init__(self, name, shape='sphere', size=0.08, strength=4.0):
+    def __init__(self, name, shape='sphere', size=0.08, strength=4.0, aspect=(3.0, 0.45), mesh=None):
+        self.aspect = aspect
         self.mat = obj_color_mat(name + '_mat', strength)
+        if mesh is not None:
+            # Figura propia (ya de frente a la cámara, en el plano XZ).
+            mesh.materials.append(self.mat)
+            self.mesh, self.name, self.size, self.shape, self.count = mesh, name, size, shape, 0
+            return
         if shape == 'sphere':
             bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=1)
         else:
@@ -222,10 +239,11 @@ class Particles:
         first = frames[0][0]
         last = frames[-1][0]
         # Invisible antes de nacer y después de morir.
-        o.color = (*color, 0)
-        o.keyframe_insert('color', frame=max(1, first - 1))
-        o.scale = (0, 0, 0)
-        o.keyframe_insert('scale', frame=max(1, first - 1))
+        if first > 1:
+            o.color = (*color, 0)
+            o.keyframe_insert('color', frame=first - 1)
+            o.scale = (0, 0, 0)
+            o.keyframe_insert('scale', frame=first - 1)
         depth = -1 - random.random() * 0.5
         for i, fr in enumerate(frames):
             if i % step and fr is not frames[-1]:
@@ -240,7 +258,7 @@ class Particles:
                 nx = frames[min(i + 1, len(frames) - 1)]
                 px = frames[max(i - 1, 0)]
                 ang = math.atan2(nx[2] - px[2], nx[1] - px[1]) if nx is not px else 0.0
-                o.scale = (sx * 3.0, 1, sx * 0.45)
+                o.scale = (sx * self.aspect[0], 1, sx * self.aspect[1])
                 o.rotation_euler = (0, -ang, 0)
                 o.keyframe_insert('rotation_euler', frame=f)
             else:
@@ -285,6 +303,12 @@ def render(out_dir):
     sc = bpy.context.scene
     sc.render.filepath = out_dir.rstrip('/') + '/f'
     only = None
+    # Para depurar: --only prefijo1,prefijo2 deja solo esos objetos (y la cámara).
+    if '--only' in sys.argv:
+        keep = sys.argv[sys.argv.index('--only') + 1].split(',')
+        for o in sc.objects:
+            if o.type != 'CAMERA' and not any(o.name.startswith(k) for k in keep):
+                o.hide_render = True
     if '--frames' in sys.argv:
         only = [int(x) for x in sys.argv[sys.argv.index('--frames') + 1].split(',')]
     if only:
@@ -331,3 +355,114 @@ def key_alpha(am, pairs):
     for f, v in pairs:
         am.inputs[1].default_value = v
         am.inputs[1].keyframe_insert('default_value', frame=f)
+
+
+def key_color(o, rgb, pairs):
+    """Anima el color y alfa de un objeto con material obj_color_mat: pairs = [(frame, alfa[, (r, g, b)]), ...]."""
+    for p in pairs:
+        f, a = p[0], p[1]
+        col = p[2] if len(p) > 2 else rgb
+        o.color = (*col, a)
+        o.keyframe_insert('color', frame=f)
+
+
+def curve_obj(name, pts, width, mat, y=-2.0, taper=None, res=2):
+    """Línea gruesa (curva con bisel) que pasa por los puntos (x, z). taper: grosor relativo por punto."""
+    cu = bpy.data.curves.new(name, 'CURVE')
+    cu.dimensions = '3D'
+    cu.bevel_depth = width
+    cu.bevel_resolution = res
+    cu.bevel_factor_mapping_end = 'SPLINE'
+    sp = cu.splines.new('POLY')
+    sp.points.add(len(pts) - 1)
+    for i, (p, (x, z)) in enumerate(zip(sp.points, pts)):
+        p.co = (x, y, z, 1)
+        if taper:
+            p.radius = taper(i / max(1, len(pts) - 1))
+    o = nudge(link(bpy.data.objects.new(name, cu)))
+    o.data.materials.append(mat)
+    return o
+
+
+def key_grow(o, pairs):
+    """Hace crecer una curva a lo largo de su recorrido: pairs = [(frame, 0..1), ...]."""
+    for f, v in pairs:
+        o.data.bevel_factor_end = v
+        o.data.keyframe_insert('bevel_factor_end', frame=f)
+
+
+def poly_mesh(name, pts, y, mat):
+    """Polígono plano (puede ser cóncavo) con los puntos (x, z), de frente a la cámara."""
+    me = bpy.data.meshes.new(name)
+    me.from_pydata([(x, y, z) for x, z in pts], [], [list(range(len(pts)))])
+    me.update()
+    o = nudge(link(bpy.data.objects.new(name, me)))
+    o.data.materials.append(mat)
+    return o
+
+
+def fractal(p0, p1, rough=0.25, levels=5):
+    """Línea quebrada entre dos puntos (desplazamiento del punto medio): rayos, grietas, arcos."""
+    pts = [p0, p1]
+    for lvl in range(levels):
+        new = [pts[0]]
+        for a, b in zip(pts, pts[1:]):
+            mx, mz = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+            dx, dz = b[0] - a[0], b[1] - a[1]
+            ln = math.hypot(dx, dz) or 1
+            off = random.gauss(0, 1) * rough * ln
+            new += [(mx - dz / ln * off, mz + dx / ln * off), b]
+        pts = new
+    return pts
+
+
+def mountains(name, x0, x1, base, top, rough, y, mat, n=40):
+    """Silueta de cerros con picos (polígono cerrado desde la base)."""
+    pts = [(x0, base)]
+    h = (top[0] + top[1]) / 2
+    for i in range(n + 1):
+        x = x0 + (x1 - x0) * i / n
+        h += random.gauss(0, rough)
+        h = min(top[1], max(top[0], h))
+        pts.append((x, h))
+    pts.append((x1, base))
+    return poly_mesh(name, pts, y, mat)
+
+
+def flat_mesh(name, polys):
+    """Malla plana en XZ con varios polígonos [[(x, z), ...], ...] (para dulces, estrellas, etc.)."""
+    verts, faces = [], []
+    for poly in polys:
+        faces.append(list(range(len(verts), len(verts) + len(poly))))
+        verts += [(x, 0, z) for x, z in poly]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.update()
+    return me
+
+
+def star_points(n, r_out, r_in, rot=0.0, jitter=0.0):
+    """Estrella de n picos (para los golpes de cómic)."""
+    pts = []
+    for i in range(2 * n):
+        r = (r_out if i % 2 == 0 else r_in) * (1 + random.uniform(-jitter, jitter))
+        a = rot + i * math.pi / n
+        pts.append((math.cos(a) * r, math.sin(a) * r))
+    return pts
+
+
+def text_obj(name, body, size, loc, mat, font=None, extrude=0.0):
+    """Texto de frente a la cámara, centrado."""
+    cu = bpy.data.curves.new(name, 'FONT')
+    cu.body = body
+    cu.size = size
+    cu.align_x = 'CENTER'
+    cu.align_y = 'CENTER'
+    cu.extrude = extrude
+    if font:
+        cu.font = bpy.data.fonts.load(font, check_existing=True)
+    o = nudge(link(bpy.data.objects.new(name, cu)))
+    o.location = (loc[0], loc[1] + o.location.y, loc[2])
+    o.rotation_euler = (math.pi / 2, 0, 0)
+    o.data.materials.append(mat)
+    return o

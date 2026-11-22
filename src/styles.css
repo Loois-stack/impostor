@@ -3494,6 +3494,60 @@ input {
   font-size: 46px;
   transform: rotate(-45deg);
 }
+.elim-stage > * {
+  grid-area: 1 / 1;
+}
+.elim-ice {
+  position: absolute;
+  inset: -12%;
+  transform-origin: 50% 100%;
+  clip-path: polygon(12% 4%, 50% 0%, 88% 6%, 100% 40%, 96% 92%, 60% 100%, 8% 96%, 0% 52%);
+  background:
+    linear-gradient(115deg, transparent 18%, rgba(255, 255, 255, 0.55) 22%, transparent 30%, transparent 58%, rgba(255, 255, 255, 0.3) 62%, transparent 68%),
+    linear-gradient(170deg, rgba(225, 250, 255, 0.62), rgba(130, 205, 255, 0.4) 45%, rgba(70, 150, 235, 0.55));
+  box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.7);
+}
+.elim-ice svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.elim-ice path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.95);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 2px rgba(160, 220, 255, 1));
+}
+.elim-shard {
+  position: relative;
+  filter: drop-shadow(0 0 4px rgba(200, 240, 255, 0.95)) drop-shadow(0 0 10px rgba(120, 200, 255, 0.6)) brightness(1.12);
+}
+.elim-shard-cut {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.elim-shard .elim-ice {
+  inset: 0;
+}
+.elim-shard-in {
+  display: grid;
+  place-items: center;
+}
+.elim-skull {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--elim-size) * 0.78);
+  line-height: 1;
+  opacity: 0;
+  filter: drop-shadow(0 0 10px rgba(150, 200, 255, 0.95)) brightness(1.4);
+}
 .elim-name {
   position: absolute;
   left: 0;
@@ -3521,7 +3575,7 @@ input {
 }
 .elim-pick {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 .elim-pick button {
