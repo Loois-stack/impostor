@@ -7,6 +7,7 @@ import { clearRoomSounds, hasReactionSound, setRoomSound } from '../audio/reacti
 import { isSound } from '../audio/recordings';
 import { link, type NetAction } from './link';
 import type { ElimChoice } from '../data/eliminations';
+import type { OpenId } from '../data/openings';
 import { publicId, useNet } from './state';
 import { bindVoice, resetVoice, setRoster, useVoice, type VoiceEntry } from './voice';
 
@@ -23,7 +24,7 @@ import { bindVoice, resetVoice, setRoster, useVoice, type VoiceEntry } from './v
  * Es un juego entre amigos: el estado completo viaja a cada teléfono y no se cifra nada extra.
  */
 
-const PROTOCOL = 8;
+const PROTOCOL = 9;
 const PREFIX = 'impostor-quien-miente-';
 /** Sin letras ni números que se confundan al dictarlos (0/O, 1/I…). */
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -592,6 +593,12 @@ export function changeAvatar(id: string, avatar: string) {
 export function changeElim(id: string, elim: ElimChoice) {
   if (link.guest) return link.send({ a: 'elim', as: id, elim });
   useGame.getState().setElim(id, elim);
+}
+
+/** Elige cómo abre su sobre un jugador de este teléfono. */
+export function changeOpen(id: string, open: OpenId) {
+  if (link.guest) return link.send({ a: 'open', as: id, open });
+  useGame.getState().setOpen(id, open);
 }
 
 // ------------------------------------------------------------------ Común

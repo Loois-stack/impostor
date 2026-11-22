@@ -5,6 +5,7 @@ import { PlayerCard } from '../components/PlayerCard';
 import { glowHalo, glowOf, MiniPack, PackShuffle, PersonalPack } from '../components/PackOpening';
 import { Avatar, Button, Handoff } from '../components/ui';
 import { CAT } from '../data/categories';
+import { openOf } from '../data/openings';
 import { fallbackPack, type PackRoll } from '../data/packs';
 import { THEME_BY_ID } from '../data/themes';
 import { isHere, useNet, useSeat } from '../net/state';
@@ -35,8 +36,9 @@ function PlayerPack({ playerId, onSeen, onOpened }: { playerId: string; onSeen: 
   const theme = round.theme ? THEME_BY_ID[round.theme] : undefined;
   const c = CAT[round.cat];
   const edition = theme ? `${theme.emoji} Edición ${theme.name}` : `${c.emoji} Edición ${c.name}`;
+  const player = players.find((p) => p.id === playerId);
   return (
-    <PersonalPack roll={roll} owner={players.find((p) => p.id === playerId)?.name ?? ''} edition={edition} onOpened={onOpened}>
+    <PersonalPack roll={roll} owner={player?.name ?? ''} edition={edition} opening={player?.open} onOpened={onOpened}>
       <PlayerCard playerId={playerId} onSeen={onSeen} glow={glowHalo(glowOf(roll))} />
     </PersonalPack>
   );
@@ -66,8 +68,8 @@ function PackPile({ rolls }: { rolls: PackRoll[] }) {
 }
 
 /** Lo que va abajo mientras alguien tiene su sobre en la mano. */
-function CardButtonText({ opened, seen, done }: { opened: boolean; seen: boolean; done: string }) {
-  return <>{!opened ? 'Primero abre tu sobre ✂️' : !seen ? 'Primero mira tu carta' : done}</>;
+function CardButtonText({ opened, seen, done, open }: { opened: boolean; seen: boolean; done: string; open?: string }) {
+  return <>{!opened ? `Primero abre tu sobre ${openOf(open).emoji}` : !seen ? 'Primero mira tu carta' : done}</>;
 }
 
 /** Un solo teléfono: se pasa de mano en mano y cada quien ve su carta en secreto. */
@@ -174,7 +176,7 @@ function DealLocal() {
           </Button>
         ) : (
           <Button disabled={!seen} onClick={next} variant={last ? 'primary' : 'plain'}>
-            <CardButtonText opened={opened} seen={seen} done={last ? '¡Todos listos! 🔥' : 'Listo, pasar ➜'} />
+            <CardButtonText opened={opened} seen={seen} open={player.open} done={last ? '¡Todos listos! 🔥' : 'Listo, pasar ➜'} />
           </Button>
         )}
       </div>
@@ -314,7 +316,7 @@ function DealOnline() {
                 </Button>
               ) : (
                 <Button disabled={!seen} onClick={done}>
-                  <CardButtonText opened={opened} seen={seen} done={pending.length > 1 ? 'Listo, pasar ➜' : 'Ya la vi, listo ✔'} />
+                  <CardButtonText opened={opened} seen={seen} open={current ? P(current).open : undefined} done={pending.length > 1 ? 'Listo, pasar ➜' : 'Ya la vi, listo ✔'} />
                 </Button>
               ))}
             {host && !current && waiting.length > 0 && (

@@ -5,7 +5,7 @@ import { canRecord, recordSound, type Recording } from '../audio/recordings';
 import { reactionSound } from '../audio/reactions';
 import { haptic, sfx } from '../audio/sfx';
 import { CardBack } from '../components/GameCard';
-import { PackGallery } from '../components/PackGallery';
+import { OpenPicker, PackGallery } from '../components/PackGallery';
 import { Avatar, Button, Segmented, Sheet, Toggle, TopBar } from '../components/ui';
 import { ITEMS } from '../data';
 import { ACHIEVEMENTS } from '../engine/achievements';
@@ -392,7 +392,7 @@ export function SettingsScreen() {
       </Sheet>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)}>
-        <div className="h2">Avatar y eliminación</div>
+        <div className="h2">Avatar, sobre y eliminación</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
           {AVATAR_CHOICES.map((a) => (
             <motion.button
@@ -409,6 +409,7 @@ export function SettingsScreen() {
             </motion.button>
           ))}
         </div>
+        {editing && players.some((p) => p.id === editing) && <OpenPicker player={players.find((p) => p.id === editing)!} />}
         {editing && players.some((p) => p.id === editing) && <ElimPicker player={players.find((p) => p.id === editing)!} />}
       </Sheet>
     </div>

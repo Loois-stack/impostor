@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { isElimChoice, type ElimChoice } from '../data/eliminations';
+import { isOpenChoice, type OpenId } from '../data/openings';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { CATEGORIES, HORROR_CATS } from '../data/categories';
 import { CH_BY_ID, type ChallengeKind } from '../data/challenges';
@@ -31,6 +32,8 @@ export interface Player {
   owner?: string;
   /** Animación con la que lo eliminan (o sorpresa). */
   elim?: ElimChoice;
+  /** Cómo abre su sobre (cortar o fuego azul). */
+  open?: OpenId;
 }
 
 export interface Profile {
@@ -230,6 +233,8 @@ interface State {
   setAvatar(id: string, avatar: string): void;
   /** Elige la animación de eliminación de un jugador. */
   setElim(id: string, elim: ElimChoice): void;
+  /** Elige cómo abre su sobre un jugador. */
+  setOpen(id: string, open: OpenId): void;
   setSettings(p: Partial<Settings>): void;
   newSession(): void;
   startRound(): void;
@@ -521,6 +526,7 @@ export const useGame = create<State>()(
 
       setAvatar: (id, avatar) => set({ players: get().players.map((p) => (p.id === id ? { ...p, avatar } : p)) }),
       setElim: (id, elim) => set({ players: get().players.map((p) => (p.id === id ? { ...p, elim } : p)) }),
+      setOpen: (id, open) => set({ players: get().players.map((p) => (p.id === id ? { ...p, open } : p)) }),
 
       setSettings: (p) => set({ settings: { ...get().settings, ...p } }),
 
@@ -1120,6 +1126,8 @@ export const useGame = create<State>()(
             return owns(a.as) && AVATAR_CHOICES.includes(a.avatar) ? s.setAvatar(a.as, a.avatar) : undefined;
           case 'elim':
             return owns(a.as) && isElimChoice(a.elim) ? s.setElim(a.as, a.elim) : undefined;
+          case 'open':
+            return owns(a.as) && isOpenChoice(a.open) ? s.setOpen(a.as, a.open) : undefined;
         }
         if (!round) return;
         const as = a.a === 'cursed' ? from : a.as ?? from;

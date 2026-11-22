@@ -31,6 +31,16 @@ describe('sala: pedir votación y salir de la partida', () => {
     for (let i = 0; i < 10 && g().screen === 'discuss' && round().lap === lap; i++) g().nextTurn();
   };
 
+  it('cada quien elige cómo abre su sobre (solo los suyos y solo opciones que existen)', () => {
+    g().remote('g1', { a: 'open', as: id('Mar'), open: 'fuego' });
+    g().remote('g1', { a: 'open', as: id('Beto'), open: 'fuego' });
+    g().remote('g1', { a: 'open', as: id('Paz'), open: 'fuego' });
+    g().remote('g2', { a: 'open', as: id('Paz'), open: 'lanzallamas' });
+    expect(g().players.find((p) => p.name === 'Mar')!.open).toBe('fuego');
+    expect(g().players.find((p) => p.name === 'Beto')!.open).toBe('fuego');
+    expect(g().players.find((p) => p.name === 'Paz')!.open).toBeUndefined();
+  });
+
   it('con mayoría se vota al terminar la vuelta, no antes', () => {
     toDiscuss();
     // 6 jugadores: se necesitan 4.

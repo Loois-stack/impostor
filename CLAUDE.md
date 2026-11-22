@@ -36,8 +36,9 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 - `src/data/`: 836 cartas en `items/*.ts`, categorías, temas de Mezcla y eventos de turno o misiones (`challenges.ts`, con las reglas de seguridad al inicio). `packs.ts`: diseños de sobre, brillos y `rollPacks` (se guarda en `round.packs`).
 - `src/screens/`: una pantalla por fase. `Intro` (ruleta), `Deal` (sobres y reparto), `Discuss` (pistas), `Vote`, `Reveal` (veredicto → última oportunidad → verdad → eventos), `LastChance` (la adivinanza del impostor), `Score`, `Lobby` y `Online` (salas), `Setup` (reglas), `Events` (catálogo).
 - `src/components/`:
-  - `PackOpening.tsx`: `PersonalPack` (el sobre de cada jugador: corte, luz, brillo y carta que sale girando), `PackShuffle` (los sobres de todos se barajan al empezar), `PackArt` y `MiniPack`.
-  - `PackGallery.tsx`: galería de sobres y brillos en Ajustes, con sobre de prueba.
+  - `PackOpening.tsx`: `PersonalPack` (el sobre de cada jugador: corte o fuego azul, luz, brillo y carta que sale girando), `PackShuffle` (los sobres de todos se barajan al empezar), `PackArt` y `MiniPack`.
+  - Apertura del sobre (`src/data/openings.ts`, `player.open`, acción de sala `open`): ✂️ cortar (la de siempre) o 🔥 fuego azul. `OpenPicker` (en `PackGallery.tsx`) va en la hoja del avatar con sobre de prueba. El fuego está en `src/fx/bluefire.ts`: un campo de quemado fijo (`burnField`: distancia al punto tocado + ruido, escalado a 0..0.97), una máscara `mask-image` del sobre de baja resolución, y encima un shader de WebGL (carbón, grietas, orilla y llamas) más un lienzo 2D (chispas y ceniza del color del sobre). Las llamas usan el avance de la máscara que ya se ve (`shownP`) para no desfasarse. Sin WebGL, la orilla se dibuja en 2D. Sonidos en `src/audio/fire.ts`.
+  - `PackGallery.tsx`: galería de sobres y brillos en Ajustes, con sobre de prueba (se puede probar cada forma de abrirlo).
   - `Wheel.tsx`: la ruleta.
   - `GameCard.tsx`: las cartas.
   - `Emo.tsx`: emojis animados.
@@ -58,7 +59,7 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 ## Reglas de diseño que hay que respetar
 
 - **Nada debe delatar información secreta.** Los colores, fondos, escenas y sonidos dependen de la categoría o del tema, nunca de la carta. El sonido y la vibración al ver la carta son iguales para civiles e impostores.
-- **Sobres:** el diseño y el brillo se sortean con su propio generador y sin mirar el rol (en Mezcla cuenta el tema, no la categoría de la carta civil). Ningún brillo usa el azul de civiles (#2ee6ff) ni el rojo de impostores (#ff2e4d). `packs.test.ts` lo verifica.
+- **Sobres:** la forma de abrirlo la elige cada jugador antes de la ronda y es igual para civiles e impostores. El diseño y el brillo se sortean con su propio generador y sin mirar el rol (en Mezcla cuenta el tema, no la categoría de la carta civil). Ningún brillo usa el azul de civiles (#2ee6ff) ni el rojo de impostores (#ff2e4d). `packs.test.ts` lo verifica.
 - **Última oportunidad:** el impostor atrapado adivina antes de ver la verdad. Con varios, lo que elige cada uno queda guardado (`guessPicks`) y se revela al final.
 - **Impostores:**
   - Siempre hay más civiles que impostores.
@@ -96,6 +97,7 @@ Antes de publicar: `npx vitest run`, `npx tsc --noEmit` y `npm run build` sin er
 10. Sala: reunión al terminar cada vuelta (otra vuelta o votar, por mayoría), llamada de voz en tiempo real con micrófono y altavoz, y grabar tu propia risa para el 😂. También: un enlace de sala ahora abre la sala aunque la app estuviera en otra pantalla (antes solo desde el menú). `PROTOCOL` = 6.
 11. Reunión también pasando el teléfono, voz grabada para cada reacción, espectadores en sala (aviso al entrar a media ronda, eliminados miran) y 4 animaciones de eliminación hechas en Blender con sonidos propios, elegibles por jugador. `PROTOCOL` = 7.
 12. Eliminaciones pulidas y 2 nuevas (6 en total): rayo con tormenta, rayo guía, grietas, rayos X y cenizas; agujero negro con disco inclinado, lente, chorros y supernova; piñata con palo, cuerda, cómic, dulces y serpentinas; cohete con ciudad, llama en capas y 4 fuegos (sauce, corazón…); 🛸 abducido por un platillo y 🧊 congelado que estalla en pedazos. `PROTOCOL` = 8 (una versión vieja no conoce las nuevas).
+13. Nueva forma de abrir el sobre: 🔥 fuego azul (se toca donde quieras y se desintegra en llamas azules), elegible por jugador junto a ✂️ cortar. `PROTOCOL` = 9.
 
 ## Pendiente o sin verificar
 

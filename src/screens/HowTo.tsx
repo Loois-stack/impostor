@@ -4,7 +4,7 @@ import { TopBar, stagger } from '../components/ui';
 import { useGame } from '../store/game';
 
 const STEPS = [
-  ['🎴', 'Tu sobre', 'Cada quien recibe su propio sobre: córtalo deslizando el dedo por la línea punteada, se llena de luz y sale tu carta. Mantenla presionada para verla en secreto. Con un teléfono, se lo van pasando; con varios, cada quien abre el suyo.'],
+  ['🎴', 'Tu sobre', 'Cada quien recibe su propio sobre: córtalo deslizando el dedo por la línea punteada (o, si elegiste 🔥 fuego azul, tócalo donde quieras y se desintegra en llamas azules) y sale tu carta. Mantenla presionada para verla en secreto. Con un teléfono, se lo van pasando; con varios, cada quien abre el suyo. La forma de abrirlo se elige tocando tu avatar.'],
   ['✨', 'Brillos', 'Al abrir el sobre sale un brillo: plateado, dorado, rosa, amatista, holográfico o cósmico (el más raro). Es pura suerte y es igual para civiles e impostores: no delata a nadie.'],
   ['🔪', 'El impostor', 'Todos tienen la MISMA carta… menos el impostor, que tiene algo PARECIDO pero distinto (o nada, en modo clásico). A veces casi idéntico y puede camuflarse; a veces tendrá que jugársela.'],
   ['👥', 'Varios impostores', 'Con más jugadores puede haber más impostores (en automático: 1 hasta 5 jugadores, 2 hasta 8, 3 hasta 11…). Cada uno tiene una carta distinta y no sabe quiénes son los otros, salvo que activen el modo equipo: ahí se conocen, comparten carta y ganan juntos.'],

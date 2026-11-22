@@ -1,7 +1,10 @@
 import { animate, AnimatePresence, motion, useAnimationControls, useMotionValue, useTransform } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { fireBurn, fireIgnite } from '../audio/fire';
 import { haptic, sfx } from '../audio/sfx';
+import { openOf, type OpenId } from '../data/openings';
 import { DESIGN_BY_ID, GLOW_BY_ID, GLOWS, PACK_DESIGNS, type Glow, type PackDesign, type PackDesignId, type PackRoll } from '../data/packs';
+import { startBlueFire } from '../fx/bluefire';
 import { burst, flash, shake } from '../fx/fx';
 import { emojiRain } from '../fx/scene';
 import { CardBack } from './GameCard';
@@ -138,14 +141,20 @@ export function MiniPack({ roll, style }: { roll?: PackRoll; style?: CSSProperti
 type PPhase = 'sealed' | 'charge' | 'burst' | 'card';
 
 /**
- * Sobre personal: el jugador lo corta con el dedo, se llena de luz y sale su carta girando.
- * El brillo depende solo de la suerte (`roll`), nunca del rol. Cuando la carta aterriza se
- * muestra `children` (la carta de verdad) exactamente en el mismo lugar.
+ * Sobre personal: el jugador lo corta con el dedo (o, con "fuego azul", lo toca y se quema), se
+ * llena de luz y sale su carta girando. El brillo depende solo de la suerte (`roll`), nunca del rol,
+ * y la forma de abrirlo la elige cada jugador. Cuando la carta aterriza se muestra `children` (la
+ * carta de verdad) exactamente en el mismo lugar.
  */
-export function PersonalPack({ roll, owner, edition, onOpened, children }: { roll: PackRoll; owner: string; edition: string; onOpened?: () => void; children?: ReactNode }) {
+export function PersonalPack({ roll, owner, edition, opening, onOpened, children }: { roll: PackRoll; owner: string; edition: string; opening?: OpenId; onOpened?: () => void; children?: ReactNode }) {
   const design = designOf(roll);
   const glow = glowOf(roll);
+  const style = openOf(opening);
+  const fire = style.id === 'fuego';
   const [phase, setPhase] = useState<PPhase>('sealed');
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  const glCanvas = useRef<HTMLCanvasElement>(null);
+  const fxCanvas = useRef<HTMLCanvasElement>(null);
   const torn = useMotionValue(0);
   const stripRot = useTransform(torn, [0, 1], [0, -14]);
   const stripY = useTransform(torn, [0, 1], [0, -8]);
@@ -160,6 +169,8 @@ export function PersonalPack({ roll, owner, edition, onOpened, children }: { rol
   const done = useRef(false);
   // Más rareza, más suspenso antes del estallido.
   const chargeMs = 520 + glow.level * 230;
+  // Con fuego: lo que tarda en quemarse todo el sobre (también con más suspenso si es más raro).
+  const burnMs = 2100 + glow.level * 170;
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const at = (ms: number, fn: () => void) => timers.current.push(window.setTimeout(fn, ms));
@@ -181,7 +192,7 @@ export function PersonalPack({ roll, owner, edition, onOpened, children }: { rol
     flash(glow.colors[1], 520, 0.32 + glow.level * 0.07);
     shake(5 + glow.level * 3, 380 + glow.level * 80);
     const r = packRef.current?.getBoundingClientRect();
-    if (r) burst({ x: r.left + r.width / 2, y: r.top + r.height * STRIP, kind: 'sparks', colors: [...glow.colors, '#fff'], count: 30 + glow.level * 22, power: 1 + glow.level * 0.12 });
+    if (r) burst({ x: r.left + r.width / 2, y: r.top + r.height * (fire ? 0.5 : STRIP), kind: 'sparks', colors: [...glow.colors, '#fff'], count: 30 + glow.level * 22, power: 1 + glow.level * 0.12 });
     if (glow.level >= 4) {
       burst({ kind: 'confetti', colors: glow.colors, count: 50 + glow.level * 20 });
       emojiRain(glow.level === 5 ? ['🌟', '✨', '💫', '⭐'] : ['✨', '💎', '🌈'], 10 + glow.level * 4);
@@ -211,6 +222,30 @@ export function PersonalPack({ roll, owner, edition, onOpened, children }: { rol
     for (let i = 0; i < beats; i++) at(250 + (i * chargeMs) / beats, () => haptic(6 + i * 4));
     at(250 + chargeMs, explode);
   };
+
+  /** Fuego azul: prende donde tocaron. */
+  const ignite = (clientX: number, clientY: number) => {
+    if (done.current || !packRef.current) return;
+    done.current = true;
+    const r = packRef.current.getBoundingClientRect();
+    const x = Math.min(0.92, Math.max(0.08, (clientX - r.left) / r.width));
+    const y = Math.min(0.92, Math.max(0.08, (clientY - r.top) / r.height));
+    sfx.unlock();
+    fireIgnite();
+    at(120, () => fireBurn(burnMs / 1000));
+    haptic([25, 30, 45]);
+    // Cosquilleo mientras se quema, cada vez más seguido.
+    for (let ms = 200; ms < burnMs; ms += 210 - (ms / burnMs) * 120) at(ms, () => haptic(5));
+    setOrigin({ x, y });
+    setPhase('charge');
+  };
+
+  // El fuego se prende una sola vez (sigue mientras haya chispas) y se apaga si el sobre se va.
+  useEffect(() => {
+    if (!origin || !packRef.current || !glCanvas.current || !fxCanvas.current) return;
+    return startBlueFire({ pack: packRef.current, glCanvas: glCanvas.current, fxCanvas: fxCanvas.current, origin, duration: burnMs, paper: design.c1, onBurnt: explode });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [origin]);
 
   const tearBy = (dx: number) => {
     const w = packRef.current?.offsetWidth ?? 220;
@@ -249,7 +284,8 @@ export function PersonalPack({ roll, owner, edition, onOpened, children }: { rol
 
   const sealed = phase === 'sealed';
   const out = phase === 'burst' || phase === 'card';
-  const rays = glow.colors.length > 3 ? `repeating-conic-gradient(${glow.colors.map((c, i) => `${c} ${i * 9}deg ${i * 9 + 5}deg, transparent ${i * 9 + 5}deg ${i * 9 + 9}deg`).join(', ')})` : undefined;
+  const rays =
+    glow.colors.length > 3 ? `repeating-conic-gradient(${glow.colors.map((c, i) => `${c} ${i * 9}deg ${i * 9 + 5}deg, transparent ${i * 9 + 5}deg ${i * 9 + 9}deg`).join(', ')})` : undefined;
 
   return (
     <div className="ppack" style={glowVars(glow)}>
@@ -274,10 +310,21 @@ export function PersonalPack({ roll, owner, edition, onOpened, children }: { rol
           <motion.div
             className="card-wrap ppack-ghost"
             initial={{ y: '16%', scale: 0.5, opacity: 0 }}
-            animate={phase === 'burst' ? { y: ['16%', '-58%', '0%'], scale: [0.5, 0.66, 1], rotateY: [0, 360, 720], rotate: [0, -5, 0], opacity: [1, 1, 1] } : { y: '16%', scale: 0.5, opacity: 0 }}
+            animate={
+              fire
+                ? phase === 'burst'
+                  ? { y: ['0%', '-14%', '0%'], scale: [0.86, 1.06, 1], rotateY: [0, 360, 720], rotate: [0, -4, 0], opacity: [1, 1, 1] }
+                  : phase === 'charge'
+                    ? { y: '0%', scale: 0.86, opacity: 1 }
+                    : { y: '0%', scale: 0.86, opacity: 0 }
+                : phase === 'burst'
+                  ? { y: ['16%', '-58%', '0%'], scale: [0.5, 0.66, 1], rotateY: [0, 360, 720], rotate: [0, -5, 0], opacity: [1, 1, 1] }
+                  : { y: '16%', scale: 0.5, opacity: 0 }
+            }
             transition={phase === 'burst' ? { duration: 1.15, times: [0, 0.45, 1], ease: 'easeOut' } : { duration: 0 }}
           >
-            <div className="ppack-ghost-face">
+            {/* Con fuego, la carta se ve detrás mientras se quema: sin el color del brillo hasta el estallido. */}
+            <div className={`ppack-ghost-face ${fire && phase === 'charge' ? 'unlit' : ''}`}>
               <CardBack hint />
             </div>
           </motion.div>
@@ -302,42 +349,66 @@ export function PersonalPack({ roll, owner, edition, onOpened, children }: { rol
         <motion.div
           className="ppack-pack"
           initial={{ y: -480, rotate: -12, opacity: 0 }}
-          animate={out ? { y: 520, rotate: 12, opacity: 0, scale: 0.9 } : { y: 0, rotate: 0, opacity: 1 }}
-          transition={out ? { delay: 0.3, duration: 0.6, ease: 'easeIn' } : { type: 'spring', stiffness: 140, damping: 13 }}
+          animate={out ? (fire ? { opacity: 0 } : { y: 520, rotate: 12, opacity: 0, scale: 0.9 }) : { y: 0, rotate: 0, opacity: 1 }}
+          transition={out ? (fire ? { delay: 0.55, duration: 0.5 } : { delay: 0.3, duration: 0.6, ease: 'easeIn' }) : { type: 'spring', stiffness: 140, damping: 13 }}
         >
           <div className={sealed ? 'pack-float' : ''} style={{ position: 'absolute', inset: 0 }}>
+            {/* Luz azul del fuego sobre la mesa. */}
+            {fire && origin && <div className="fire-light" />}
             {/* Luz que se escapa por la abertura. */}
-            {phase === 'charge' && (
-              <motion.div className="ppack-leak" initial={{ scaleY: 0, opacity: 0 }} animate={{ scaleY: [0, 0.4, 0.3, 0.8, 0.6, 1.1], opacity: [0, 0.7, 0.5, 0.9, 0.7, 1] }} transition={{ duration: (chargeMs + 250) / 1000, ease: 'easeIn' }} />
+            {phase === 'charge' && !fire && (
+              <motion.div
+                className="ppack-leak"
+                initial={{ scaleY: 0, opacity: 0 }}
+                animate={{ scaleY: [0, 0.4, 0.3, 0.8, 0.6, 1.1], opacity: [0, 0.7, 0.5, 0.9, 0.7, 1] }}
+                transition={{ duration: (chargeMs + 250) / 1000, ease: 'easeIn' }}
+              />
             )}
             <motion.div
               ref={packRef}
-              className="pack"
+              className={`pack ${fire && sealed ? 'pack-flammable' : ''}`}
               style={{ clipPath: CRIMP }}
               animate={packCtl}
               whileTap={sealed ? { scaleX: 0.97, scaleY: 1.02 } : undefined}
               onPointerDown={() => sealed && sfx.packCrinkle(0.6)}
+              onClick={fire && sealed ? (e) => ignite(e.clientX, e.clientY) : undefined}
+              role={fire && sealed ? 'button' : undefined}
+              aria-label={fire && sealed ? 'Prenderle fuego al sobre' : undefined}
             >
-              <div className={`pack-body ${sealed ? 'idle' : ''}`}>
-                <div className="pack-slice" style={{ top: `${(-STRIP / (1 - STRIP)) * 100}%`, height: `${100 / (1 - STRIP)}%` }}>
+              {fire ? (
+                <div className={`pack-body fire ${sealed ? 'idle' : ''}`}>
                   <PackArt design={design} owner={owner} edition={edition} />
                 </div>
-                {!sealed && <motion.div className="pack-glow" initial={{ opacity: 0 }} animate={{ opacity: [0, 0.6, 0.4, 1] }} transition={{ duration: chargeMs / 1000 }} />}
-              </div>
+              ) : (
+                <>
+                  <div className={`pack-body ${sealed ? 'idle' : ''}`}>
+                    <div className="pack-slice" style={{ top: `${(-STRIP / (1 - STRIP)) * 100}%`, height: `${100 / (1 - STRIP)}%` }}>
+                      <PackArt design={design} owner={owner} edition={edition} />
+                    </div>
+                    {!sealed && <motion.div className="pack-glow" initial={{ opacity: 0 }} animate={{ opacity: [0, 0.6, 0.4, 1] }} transition={{ duration: chargeMs / 1000 }} />}
+                  </div>
 
-              <motion.div className="pack-strip" style={{ rotate: stripRot, y: stripY }} animate={stripCtl}>
-                <div className="pack-slice" style={{ top: 0, height: `${100 / STRIP}%` }}>
-                  <PackArt design={design} owner={owner} edition={edition} />
-                </div>
-              </motion.div>
+                  <motion.div className="pack-strip" style={{ rotate: stripRot, y: stripY }} animate={stripCtl}>
+                    <div className="pack-slice" style={{ top: 0, height: `${100 / STRIP}%` }}>
+                      <PackArt design={design} owner={owner} edition={edition} />
+                    </div>
+                  </motion.div>
 
-              <div className="pack-line" />
-              <motion.div className="pack-tear" style={{ width: tearW }} />
+                  <div className="pack-line" />
+                  <motion.div className="pack-tear" style={{ width: tearW }} />
+                </>
+              )}
             </motion.div>
+            {fire && (
+              <>
+                <canvas ref={glCanvas} className="fire-canvas" aria-hidden />
+                <canvas ref={fxCanvas} className="fire-canvas" aria-hidden />
+              </>
+            )}
           </div>
 
           {/* Zona para cortar: un poco más alta que la línea para que sea fácil con el dedo. */}
-          {sealed && (
+          {sealed && !fire && (
             <div
               className="pack-cutzone"
               onPointerDown={(e) => {
@@ -372,7 +443,7 @@ export function PersonalPack({ roll, owner, edition, onOpened, children }: { rol
       )}
 
       <motion.div className="dim pack-hint ppack-hint" animate={{ opacity: sealed ? 1 : 0 }}>
-        Desliza el dedo por la línea punteada para cortarlo ✂️
+        {style.hint}
       </motion.div>
     </div>
   );
@@ -469,7 +540,8 @@ export function PackShuffle({ rolls, onDone }: { rolls: PackRoll[]; onDone: () =
     return 0;
   };
 
-  const caption = phase === 'in' ? `${rolls.length} ${rolls.length === 1 ? 'sobre sellado' : 'sobres sellados'}` : phase === 'square' || phase === 'out' ? '¡Uno para cada quien!' : 'Barajando sobres…';
+  const caption =
+    phase === 'in' ? `${rolls.length} ${rolls.length === 1 ? 'sobre sellado' : 'sobres sellados'}` : phase === 'square' || phase === 'out' ? '¡Uno para cada quien!' : 'Barajando sobres…';
 
   return (
     <div className="pack-stage">

@@ -1,5 +1,6 @@
 import { AnimatePresence, Reorder, motion, useDragControls } from 'framer-motion';
 import { ElimPicker } from '../components/Elimination';
+import { OpenPicker } from '../components/PackGallery';
 import { useState } from 'react';
 import { sfx } from '../audio/sfx';
 import { Avatar, Button, Sheet, TopBar } from '../components/ui';
@@ -123,7 +124,7 @@ export function Players() {
       </div>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)}>
-        <div className="h2">Avatar y eliminación</div>
+        <div className="h2">Avatar, sobre y eliminación</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 6 }}>
           {AVATAR_CHOICES.map((a) => (
             <motion.button
@@ -140,6 +141,7 @@ export function Players() {
             </motion.button>
           ))}
         </div>
+        {editing && players.some((p) => p.id === editing) && <OpenPicker player={players.find((p) => p.id === editing)!} />}
         {editing && players.some((p) => p.id === editing) && <ElimPicker player={players.find((p) => p.id === editing)!} />}
       </Sheet>
     </div>

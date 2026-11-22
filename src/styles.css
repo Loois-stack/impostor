@@ -2193,6 +2193,9 @@ input {
   overflow: hidden;
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--g2), 0 0 40px var(--g2);
 }
+.ppack-ghost-face.unlit {
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(120, 170, 255, 0.35), 0 0 34px rgba(60, 110, 255, 0.45);
+}
 .ppack-pack {
   position: absolute;
   left: 50%;
@@ -2302,6 +2305,39 @@ input {
   height: 17%;
   z-index: 2;
   transform-origin: 100% 100%;
+}
+/* Fuego azul: el sobre entero (sin tira que cortar) y los lienzos del fuego encima. */
+.pack-body.fire {
+  top: 0;
+  border-radius: 6px;
+}
+.pack-flammable {
+  cursor: pointer;
+}
+.fire-canvas {
+  position: absolute;
+  left: -32%;
+  top: -58%;
+  width: 164%;
+  height: 172%;
+  pointer-events: none;
+  z-index: 4;
+}
+.fire-light {
+  position: absolute;
+  inset: -30% -50%;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(70, 130, 255, 0.5), rgba(40, 70, 255, 0.16) 55%, transparent 78%);
+  animation: fire-light 0.9s ease-in-out infinite alternate, fire-light-in 0.4s ease-out;
+}
+@keyframes fire-light {
+  0% { opacity: 0.75; transform: scale(0.97); }
+  35% { opacity: 1; transform: scale(1.03); }
+  60% { opacity: 0.82; transform: scale(0.99); }
+  100% { opacity: 0.95; transform: scale(1.02); }
+}
+@keyframes fire-light-in {
+  from { opacity: 0; transform: scale(0.4); }
 }
 .pack-slice {
   position: absolute;
@@ -3577,6 +3613,9 @@ input {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
+}
+.elim-pick.two {
+  grid-template-columns: repeat(2, 1fr);
 }
 .elim-pick button {
   display: grid;

@@ -22,7 +22,9 @@ export type NetAction =
   | { a: 'removeLocal'; as: string }
   | { a: 'avatar'; as: string; avatar: string }
   /** Elegir su animación de eliminación. */
-  | { a: 'elim'; as: string; elim: string };
+  | { a: 'elim'; as: string; elim: string }
+  /** Elegir cómo abre su sobre. */
+  | { a: 'open'; as: string; open: string };
 
 export const link = {
   /** Este teléfono es invitado: refleja el estado del anfitrión y le manda sus acciones. */
