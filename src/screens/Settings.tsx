@@ -13,6 +13,7 @@ import { levelFromXp } from '../engine/scoring';
 import { floatReaction, REACTIONS } from '../fx/reactions';
 import { SKIN_IDS, SKINS, skinVars } from '../fx/skins';
 import { downloadAll, offlineStatus, type OfflineStatus } from '../services/images';
+import { perf } from '../services/perf';
 import { AVATAR_CHOICES, useGame } from '../store/game';
 import { publicId } from '../net/state';
 import { usePrefs } from '../store/prefs';
@@ -249,6 +250,38 @@ function OfflinePanel() {
   );
 }
 
+/** Efectos visuales: automático (mide qué tan fluido va este teléfono), ligeros o completos. */
+function PerfPanel() {
+  const pref = usePrefs((s) => s.perf ?? 'auto');
+  const set = usePrefs((s) => s.set);
+  const desc =
+    pref === 'auto'
+      ? perf.autoLite
+        ? 'Este teléfono iba algo lento, así que se usan efectos ligeros.'
+        : 'Completos; si el teléfono se traba, cambian solos a ligeros.'
+      : pref === 'lite'
+        ? 'Menos adornos y partículas, para que todo vaya fluido.'
+        : 'Todos los adornos, aunque el teléfono vaya lento.';
+  return (
+    <div className="panel stack" style={{ gap: 8 }}>
+      <b>⚡ Efectos visuales</b>
+      <Segmented
+        id="perf"
+        value={pref}
+        onChange={(v) => set({ perf: v })}
+        options={[
+          { value: 'auto', label: 'Automático' },
+          { value: 'lite', label: 'Ligeros' },
+          { value: 'full', label: 'Completos' },
+        ]}
+      />
+      <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.4 }}>
+        {desc}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsScreen() {
   const { go, history, clearHistory, players, profiles, setAvatar, online } = useGame();
   const prefs = usePrefs();
@@ -316,6 +349,7 @@ export function SettingsScreen() {
             title="Animaciones de eliminación"
             desc="Rayo, agujero negro, piñata, cohete, platillo volador o hielo. Cada jugador elige la suya tocando su avatar."
           />
+          <PerfPanel />
           <ReactionSounds />
 
           <OfflinePanel />

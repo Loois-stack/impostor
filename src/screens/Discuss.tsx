@@ -375,7 +375,7 @@ export function Discuss() {
                   <motion.div
                     animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.15, 0.5] }}
                     transition={{ repeat: Infinity, duration: 2 }}
-                    style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: player.color, filter: 'blur(20px)' }}
+                    style={{ position: 'absolute', inset: -24, borderRadius: '50%', background: `radial-gradient(circle, ${player.color} 0%, ${player.color}88 40%, transparent 70%)` }}
                   />
                   <Avatar player={player} size={120} mood={pending ? undefined : 'talk'} />
                   {round.timer > 0 && !pending && <TurnTimer seconds={round.timer} turnKey={turnKey} />}

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { perf } from '../services/perf';
 
 /** Efectos imperativos globales: explosiones de partículas, destellos y sacudidas de pantalla. */
 
@@ -65,7 +66,7 @@ export function FxLayer() {
     flashEl = flashRef.current;
     const cv = canvas.current!;
     const ctx = cv.getContext('2d')!;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(perf.lite ? 1 : 2, window.devicePixelRatio || 1);
     const resize = () => {
       cv.width = window.innerWidth * dpr;
       cv.height = window.innerHeight * dpr;
@@ -136,6 +137,7 @@ export function FxLayer() {
 
     push = ({ x = window.innerWidth / 2, y = window.innerHeight / 2, colors = ['#fff'], count = 60, kind = 'confetti', power = 1 }) => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) count = Math.min(count, 12);
+      else if (perf.lite) count = Math.ceil(count * 0.45);
       for (let i = 0; i < count; i++) {
         const ang = kind === 'confetti' ? -Math.PI / 2 + (Math.random() - 0.5) * 2.4 : Math.random() * Math.PI * 2;
         const sp = (kind === 'confetti' ? 8 + Math.random() * 10 : 3 + Math.random() * 11) * power;

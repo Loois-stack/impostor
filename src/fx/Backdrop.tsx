@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Skin } from '../store/prefs';
+import { perf } from '../services/perf';
 import { SKINS } from './skins';
 
 export type Mood = 'calm' | 'horror' | 'danger';
@@ -54,7 +55,9 @@ export function Backdrop({ c1, c2, mood = 'calm', skin = 'neon' }: Props) {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let w = 0;
     let h = 0;
-    const scale = 0.5; // se dibuja a media resolución y se escala: barato y ya se ve difuso
+    // Se dibuja chiquito y el navegador lo estira: barato y ya se ve difuso (sin filtro de desenfoque,
+    // que obligaba a re-desenfocar toda la pantalla en cada cuadro).
+    const scale = perf.lite ? 0.25 : 0.35;
     const resize = () => {
       w = canvas.width = Math.ceil(window.innerWidth * scale);
       h = canvas.height = Math.ceil(window.innerHeight * scale);
@@ -68,7 +71,7 @@ export function Backdrop({ c1, c2, mood = 'calm', skin = 'neon' }: Props) {
     const spawn = (initial = false): Particle => ({
       x: Math.random() * w,
       y: initial ? Math.random() * h : h + 10,
-      r: 0.6 + Math.random() * 1.8,
+      r: (0.6 + Math.random() * 1.8) * (scale / 0.5),
       vy: 0.15 + Math.random() * 0.45,
       vx: (Math.random() - 0.5) * 0.2,
       life: Math.random(),
@@ -80,18 +83,26 @@ export function Backdrop({ c1, c2, mood = 'calm', skin = 'neon' }: Props) {
 
     let raf = 0;
     let t = 0;
+    let last = 0;
     const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-    const frame = () => {
-      t += 1 / 60;
+    // El fondo se mueve lento: con 30 cuadros por segundo basta (20 en ligeros), y libera al
+    // teléfono para lo que sí importa.
+    const frame = (now = performance.now()) => {
+      raf = requestAnimationFrame(frame);
+      const step = perf.lite ? 50 : 33;
+      if (now - last < step - 4) return;
+      const k = last ? Math.min(3, (now - last) / (1000 / 60)) : 1;
+      last = now;
+      t += k / 60;
       const tg = target.current;
       for (let i = 0; i < 3; i++) {
-        cur.c1[i] = lerp(cur.c1[i], tg.c1[i], 0.04);
-        cur.c2[i] = lerp(cur.c2[i], tg.c2[i], 0.04);
+        cur.c1[i] = lerp(cur.c1[i], tg.c1[i], 0.04 * k);
+        cur.c2[i] = lerp(cur.c2[i], tg.c2[i], 0.04 * k);
       }
-      cur.danger = lerp(cur.danger, tg.mood === 'danger' ? 1 : 0, 0.05);
-      cur.horror = lerp(cur.horror, tg.mood === 'horror' ? 1 : 0, 0.03);
+      cur.danger = lerp(cur.danger, tg.mood === 'danger' ? 1 : 0, 0.05 * k);
+      cur.horror = lerp(cur.horror, tg.mood === 'horror' ? 1 : 0, 0.03 * k);
       const sk = SKINS[tg.skin];
-      for (let i = 0; i < 3; i++) cur.bg[i] = lerp(cur.bg[i], sk.bg[i], 0.04);
+      for (let i = 0; i < 3; i++) cur.bg[i] = lerp(cur.bg[i], sk.bg[i], 0.04 * k);
 
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = `rgb(${(cur.bg[0] + cur.danger * 20) | 0},${cur.bg[1] | 0},${cur.bg[2] | 0})`;
@@ -131,13 +142,15 @@ export function Backdrop({ c1, c2, mood = 'calm', skin = 'neon' }: Props) {
       if (!reduced) {
         const dust = cur.horror > 0.5 ? 'embers' : sk.dust;
         const [r, g, b] = cur.danger > 0.3 ? [255, 60, 80] : dust === 'gold' ? [255, 214, 120] : cur.c1;
-        for (const p of parts) {
+        const n = perf.lite ? 30 : parts.length;
+        for (let pi = 0; pi < n; pi++) {
+          const p = parts[pi];
           const fall = dust === 'confetti';
           // El papel picado cae balanceándose; las brasas y el oro suben.
-          p.y += (fall ? 1 : -1) * p.vy * (1 + cur.danger * 2) * (dust === 'gold' ? 0.5 : 1);
-          p.x += p.vx + Math.sin(t * (fall ? 1.6 : 1) + p.tw) * (fall ? 0.35 : 0.1);
-          p.life += 0.004;
-          p.rot += 0.03;
+          p.y += (fall ? 1 : -1) * p.vy * (1 + cur.danger * 2) * (dust === 'gold' ? 0.5 : 1) * k * scale * 2;
+          p.x += (p.vx + Math.sin(t * (fall ? 1.6 : 1) + p.tw) * (fall ? 0.35 : 0.1)) * k * scale * 2;
+          p.life += 0.004 * k;
+          p.rot += 0.03 * k;
           if (fall ? p.y > h + 10 : p.y < -10) Object.assign(p, spawn(), fall ? { y: -10 } : {});
           const edge = fall ? Math.min(1, (p.y + 10) / 60) : Math.min(1, (h - p.y) / 60);
           if (fall) {
@@ -158,7 +171,6 @@ export function Backdrop({ c1, c2, mood = 'calm', skin = 'neon' }: Props) {
           }
         }
       }
-      raf = requestAnimationFrame(frame);
     };
     frame();
     const onVis = () => {
@@ -175,7 +187,7 @@ export function Backdrop({ c1, c2, mood = 'calm', skin = 'neon' }: Props) {
 
   return (
     <>
-      <canvas ref={ref} style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', zIndex: 0, filter: 'blur(2px)' }} />
+      <canvas ref={ref} style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', zIndex: 0 }} />
       <div className="vignette" />
       <div className="grain" />
     </>

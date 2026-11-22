@@ -4,7 +4,7 @@ import { fireBurn, fireIgnite } from '../audio/fire';
 import { haptic, sfx } from '../audio/sfx';
 import { openOf, type OpenId } from '../data/openings';
 import { DESIGN_BY_ID, GLOW_BY_ID, GLOWS, PACK_DESIGNS, type Glow, type PackDesign, type PackDesignId, type PackRoll } from '../data/packs';
-import { startBlueFire } from '../fx/bluefire';
+import { startBlueFire, warmBlueFire } from '../fx/bluefire';
 import { burst, flash, shake } from '../fx/fx';
 import { emojiRain } from '../fx/scene';
 import { CardBack } from './GameCard';
@@ -239,6 +239,13 @@ export function PersonalPack({ roll, owner, edition, opening, onOpened, children
     setOrigin({ x, y });
     setPhase('charge');
   };
+
+  // Con fuego, el shader se prepara en cuanto aparece el sobre (no hasta que lo tocan).
+  useEffect(() => {
+    if (!fire || !glCanvas.current) return;
+    const id = window.setTimeout(() => glCanvas.current && warmBlueFire(glCanvas.current), 450);
+    return () => clearTimeout(id);
+  }, [fire]);
 
   // El fuego se prende una sola vez (sigue mientras haya chispas) y se apaga si el sobre se va.
   useEffect(() => {

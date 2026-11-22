@@ -79,7 +79,7 @@ function LastChanceIntro({ player, note, onDone }: { player: Player; note?: Reac
       className="lc-intro"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 1.2, filter: 'blur(10px)' }}
+      exit={{ opacity: 0, scale: 1.2 }}
       transition={{ duration: 0.35 }}
       onClick={() => step >= 2 && finish()}
     >

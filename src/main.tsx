@@ -11,10 +11,12 @@ import { App } from './App';
 import { BY_ID } from './data';
 import { bootNet } from './net/net';
 import { dropLegacyCache } from './services/images';
+import { initPerf } from './services/perf';
 import { startUpdates } from './services/update';
 import { useGame } from './store/game';
 import './styles.css';
 
+initPerf();
 startUpdates();
 dropLegacyCache();
 bootNet();

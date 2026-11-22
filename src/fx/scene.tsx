@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { perf } from '../services/perf';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { CategoryId } from '../data/types';
 import type { EventId } from '../engine/events';
@@ -137,6 +138,7 @@ let rid = 0;
 
 /** Llueven emojis desde arriba (celebraciones, sustos, el evento de la ronda…). */
 export function emojiRain(emojis: string[], count = 26) {
+  if (perf.lite) count = Math.ceil(count * 0.5);
   if (!rainPush || typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   rainPush(
     Array.from({ length: count }, (_, i) => ({

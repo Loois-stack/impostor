@@ -97,7 +97,7 @@ export function Intro() {
 
       <AnimatePresence mode="wait">
         {phase !== 'event' ? (
-          <motion.div key="wheel" exit={{ opacity: 0, scale: 0.7, filter: 'blur(10px)' }} className="content center" style={{ gap: 10, width: '100%' }}>
+          <motion.div key="wheel" exit={{ opacity: 0, scale: 0.7 }} className="content center" style={{ gap: 10, width: '100%' }}>
             <div className="dim" style={{ fontWeight: 800 }}>
               {theme ? '🔀 El tema es…' : 'La categoría es…'}
             </div>

@@ -11,6 +11,8 @@
  * Si no hay WebGL, la orilla y lo carbonizado se dibujan en el lienzo 2D (sin llamas).
  */
 
+import { perf } from '../services/perf';
+
 /** Cuánto se sale el lienzo del sobre (fracción del ancho o alto del sobre): arriba hay espacio para las llamas. */
 export const FIRE_EXT = { l: 0.32, r: 0.32, t: 0.58, b: 0.14 };
 
@@ -90,6 +92,9 @@ const VERT = `attribute vec2 aPos; varying vec2 vUv;
 void main(){ vUv = vec2(aPos.x * .5 + .5, .5 - aPos.y * .5); gl_Position = vec4(aPos, 0., 1.); }`;
 
 const FRAG = `precision highp float;
+#ifndef STEPS
+#define STEPS 10
+#endif
 varying vec2 vUv;
 uniform sampler2D uField;
 uniform vec4 uRect;
@@ -148,12 +153,12 @@ void main(){
   float tongue = 0.3 + 1.3 * vn(vec2(uv.x * 17., uT * 2.2)) * vn(vec2(uv.x * 31. + 4., uT * 3.1));
   float fl = 0.;
   float halo = 0.;
-  for (int k = 0; k < 12; k++) {
-    float s = float(k) / 11. * 0.24 * tongue;
+  for (int k = 0; k < STEPS; k++) {
+    float s = float(k) / float(STEPS - 1) * 0.24 * tongue;
     vec2 q = vec2(uv.x + wob * 0.08 * (s / 0.24), uv.y + s);
     float eq = rim(field(q) - uP);
-    fl += eq * (1. - float(k) / 12.);
-    halo += eq;
+    fl += eq * (1. - float(k) / float(STEPS)) * (12. / float(STEPS));
+    halo += eq * (12. / float(STEPS));
   }
   float turb = fbm(vec2(uv.x * 14., uv.y * 9. + uT * 4.5));
   fl = clamp(fl * 0.3 * uFlame * (0.2 + 1.4 * turb * turb), 0., 1.);
@@ -200,6 +205,69 @@ export interface BlueFireOptions {
 }
 
 const COLS = 72;
+
+interface FireGL {
+  gl: WebGLRenderingContext;
+  prog: WebGLProgram;
+  loc: Record<string, WebGLUniformLocation | null>;
+}
+const compiled = new WeakMap<HTMLCanvasElement, FireGL | null>();
+
+/** Prepara el shader del fuego en ese lienzo (una sola vez; compilarlo tarda y daba un tirón al tocar). */
+function compileFire(canvas: HTMLCanvasElement): FireGL | null {
+  if (compiled.has(canvas)) return compiled.get(canvas)!;
+  let out: FireGL | null = null;
+  try {
+    const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false }) as WebGLRenderingContext | null;
+    if (gl) {
+      const sh = (type: number, src: string) => {
+        const s = gl.createShader(type)!;
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) ?? 'shader');
+        return s;
+      };
+      const prog = gl.createProgram()!;
+      gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
+      gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `${perf.lite ? '#define STEPS 6\n' : ''}${FRAG}`));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link');
+      gl.useProgram(prog);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      const ap = gl.getAttribLocation(prog, 'aPos');
+      gl.enableVertexAttribArray(ap);
+      gl.vertexAttribPointer(ap, 2, gl.FLOAT, false, 0, 0);
+      const loc: FireGL['loc'] = {};
+      for (const u of ['uField', 'uRect', 'uRes', 'uP', 'uT', 'uFlame']) loc[u] = gl.getUniformLocation(prog, u);
+      out = { gl, prog, loc };
+    }
+  } catch {
+    out = null;
+  }
+  compiled.set(canvas, out);
+  return out;
+}
+
+/**
+ * Deja listo el fuego antes de que lo toquen: compila el shader y dibuja una vez en chiquito (muchos
+ * teléfonos terminan de compilar hasta el primer dibujo).
+ */
+export function warmBlueFire(canvas: HTMLCanvasElement) {
+  const f = compileFire(canvas);
+  if (!f) return;
+  const { gl, loc } = f;
+  canvas.width = canvas.height = 2;
+  gl.viewport(0, 0, 2, 2);
+  gl.uniform1f(loc.uP, -1);
+  gl.uniform1f(loc.uFlame, 0);
+  gl.uniform4f(loc.uRect, 0, 0, 1, 1);
+  gl.uniform2f(loc.uRes, 2, 2);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
 
 /** Prende el fuego. Devuelve una función para apagarlo y limpiar. */
 export function startBlueFire(o: BlueFireOptions): () => void {
@@ -255,35 +323,17 @@ export function startBlueFire(o: BlueFireOptions): () => void {
   };
 
   // ---------- WebGL ----------
-  let gl: WebGLRenderingContext | null = null;
-  let prog: WebGLProgram | null = null;
-  const loc: Record<string, WebGLUniformLocation | null> = {};
-  const glScale = Math.min(1.25, dpr) * 0.8;
+  // El fuego es borroso por naturaleza: se calcula a menos resolución y el navegador lo estira.
+  // Si aun así el teléfono no alcanza, baja solo (ver `adapt`).
+  let glScale = perf.lite ? 0.4 : 0.6;
   glCanvas.width = Math.round(cw * glScale);
   glCanvas.height = Math.round(chh * glScale);
-  try {
-    gl = glCanvas.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false }) as WebGLRenderingContext | null;
-    if (gl) {
-      const sh = (type: number, src: string) => {
-        const s = gl!.createShader(type)!;
-        gl!.shaderSource(s, src);
-        gl!.compileShader(s);
-        if (!gl!.getShaderParameter(s, gl!.COMPILE_STATUS)) throw new Error(gl!.getShaderInfoLog(s) ?? 'shader');
-        return s;
-      };
-      prog = gl.createProgram()!;
-      gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
-      gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG));
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link');
-      gl.useProgram(prog);
-      const buf = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-      const ap = gl.getAttribLocation(prog, 'aPos');
-      gl.enableVertexAttribArray(ap);
-      gl.vertexAttribPointer(ap, 2, gl.FLOAT, false, 0, 0);
-      for (const u of ['uField', 'uRect', 'uRes', 'uP', 'uT', 'uFlame']) loc[u] = gl.getUniformLocation(prog, u);
+  const ready = compileFire(glCanvas);
+  const gl = ready?.gl ?? null;
+  const prog = ready?.prog ?? null;
+  const loc = ready?.loc ?? {};
+  if (gl) {
+    try {
       // Campo en una textura: rojo = parte gruesa, verde = parte fina (se mezclan bien al interpolar).
       const tex = new Uint8Array(COLS * rows * 4);
       for (let k = 0; k < field.length; k++) {
@@ -307,9 +357,9 @@ export function startBlueFire(o: BlueFireOptions): () => void {
       gl.uniform2f(loc.uRes, glCanvas.width, glCanvas.height);
       gl.viewport(0, 0, glCanvas.width, glCanvas.height);
       gl.clearColor(0, 0, 0, 0);
+    } catch {
+      /* sin textura: no se dibuja el fuego de WebGL */
     }
-  } catch {
-    gl = null;
   }
 
   // ---------- Chispas y ceniza (2D) ----------
@@ -343,7 +393,7 @@ export function startBlueFire(o: BlueFireOptions): () => void {
   const toPx = (u: number, v: number) => [(FIRE_EXT.l + u) * pw * dpr, (FIRE_EXT.t + v) * ph * dpr];
 
   const spawn = (p: number, dt: number, rate: number) => {
-    const tries = Math.round(70 * dt * 60 * rate);
+    const tries = Math.round((perf.lite ? 30 : 70) * dt * 60 * rate);
     for (let k = 0; k < tries; k++) {
       const i = Math.floor(Math.random() * COLS);
       const j = Math.floor(Math.random() * rows);
@@ -366,7 +416,8 @@ export function startBlueFire(o: BlueFireOptions): () => void {
         vr: (Math.random() - 0.5) * 8,
       });
     }
-    if (sparks.length > 420) sparks.splice(0, sparks.length - 420);
+    const cap = perf.lite ? 150 : 380;
+    if (sparks.length > cap) sparks.splice(0, sparks.length - cap);
   };
 
   const drawFallback = (p: number) => {
@@ -388,6 +439,27 @@ export function startBlueFire(o: BlueFireOptions): () => void {
     ctx.drawImage(low, x0, y0, pw * dpr, ph * dpr);
   };
 
+  // Si los cuadros tardan, baja la resolución del fuego (hasta dos veces).
+  const times: number[] = [];
+  let downs = 0;
+  const adapt = (dt: number) => {
+    if (!gl || downs >= 2) return;
+    times.push(dt);
+    if (times.length < 14) return;
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    times.length = 0;
+    if (avg > 0.026) {
+      downs++;
+      glScale *= 0.72;
+      glCanvas.width = Math.round(cw * glScale);
+      glCanvas.height = Math.round(chh * glScale);
+      gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+      gl.uniform2f(loc.uRes, glCanvas.width, glCanvas.height);
+    }
+  };
+  // El sobre en su propia capa: así cambiar la máscara no obliga a repintar todo su dibujo.
+  pack.style.willChange = 'transform';
+
   let stopped = false;
   let raf = 0;
   const t0 = performance.now();
@@ -399,6 +471,7 @@ export function startBlueFire(o: BlueFireOptions): () => void {
     if (stopped) return;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    adapt(dt);
     const el = now - t0;
     const t = el / o.duration;
     const target = burnProgress(t, top) + Math.max(0, el - o.duration) / 4000;

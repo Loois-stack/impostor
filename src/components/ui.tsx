@@ -191,7 +191,7 @@ export function Handoff() {
 }
 
 /** Capa oscura a pantalla completa para avisos importantes. */
-export function Overlay({ children, z = 40, tint = 'rgba(5,3,10,.86)' }: { children: ReactNode; z?: number; tint?: string }) {
+export function Overlay({ children, z = 40, tint = 'rgba(5,3,10,.95)' }: { children: ReactNode; z?: number; tint?: string }) {
   return (
     <motion.div className="overlay" style={{ zIndex: z, background: tint }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       {children}
@@ -200,10 +200,11 @@ export function Overlay({ children, z = 40, tint = 'rgba(5,3,10,.86)' }: { child
 }
 
 /** Transición de pantalla compartida. */
+// Sin desenfoque: animar un blur de toda la pantalla trababa los teléfonos en cada cambio.
 export const screenAnim = {
-  initial: { opacity: 0, scale: 1.04, filter: 'blur(8px)' },
-  animate: { opacity: 1, scale: 1, filter: 'blur(0px)' },
-  exit: { opacity: 0, scale: 0.96, filter: 'blur(8px)' },
+  initial: { opacity: 0, scale: 1.03 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.97 },
   transition: { duration: 0.35, ease: [0.2, 0.7, 0.2, 1] as const },
 };
 

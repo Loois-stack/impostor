@@ -9,6 +9,8 @@ export type ReactSound = 'all' | 'mine' | 'off';
  * Preferencias de ESTE teléfono (sonido, apariencia, nombre en salas). Van aparte del estado
  * de la partida porque en multijugador la partida la manda el anfitrión, pero esto no.
  */
+export type PerfPref = 'auto' | 'lite' | 'full';
+
 interface Prefs {
   sound: boolean;
   music: boolean;
@@ -16,6 +18,8 @@ interface Prefs {
   reactSound: ReactSound;
   /** Ver la animación cuando eliminan a alguien. */
   elimFx: boolean;
+  /** Efectos visuales: automático (ligeros si el teléfono no alcanza), siempre ligeros o completos. */
+  perf: PerfPref;
   /** Tus sonidos grabados (comprimidos), por reacción: si existe, esa reacción suena con tu voz. */
   sounds: Record<string, string>;
   skin: Skin;
@@ -51,6 +55,7 @@ export const usePrefs = create<Prefs>()(
       vibration: true,
       reactSound: 'all',
       elimFx: true,
+      perf: 'auto',
       sounds: {},
       skin: 'neon',
       deviceId: randomId(),
