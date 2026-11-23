@@ -153,6 +153,12 @@ export function PersonalPack({ roll, owner, edition, opening, onOpened, children
   const fire = style.id === 'fuego';
   const [phase, setPhase] = useState<PPhase>('sealed');
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  // Con fuego: la carta espera DENTRO del contorno del sobre (más chica y centrada en él), así solo
+  // se ve por los hoyos que va abriendo el fuego. Crece a su tamaño hasta que ya no queda sobre.
+  const [fit, setFit] = useState<{ s: number; x: number; y: number; h: number } | null>(null);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const glCanvas = useRef<HTMLCanvasElement>(null);
   const fxCanvas = useRef<HTMLCanvasElement>(null);
   const torn = useMotionValue(0);
@@ -236,6 +242,19 @@ export function PersonalPack({ roll, owner, edition, opening, onOpened, children
     haptic([25, 30, 45]);
     // Cosquilleo mientras se quema, cada vez más seguido.
     for (let ms = 200; ms < burnMs; ms += 210 - (ms / burnMs) * 120) at(ms, () => haptic(5));
+    // Medidas sin transformaciones (offset*): el sobre y la carta son hijos de `.ppack`.
+    const box = boxRef.current;
+    const slot = slotRef.current;
+    const card = ghostRef.current;
+    if (box && slot && card && card.offsetWidth && card.offsetHeight) {
+      const s = Math.min((box.offsetWidth * 0.84) / card.offsetWidth, (box.offsetHeight * 0.86) / card.offsetHeight);
+      setFit({
+        s,
+        x: box.offsetLeft + box.offsetWidth / 2 - (slot.offsetLeft + slot.offsetWidth / 2),
+        y: box.offsetTop + box.offsetHeight / 2 - (slot.offsetTop + slot.offsetHeight / 2),
+        h: card.offsetHeight,
+      });
+    }
     setOrigin({ x, y });
     setPhase('charge');
   };
@@ -250,7 +269,8 @@ export function PersonalPack({ roll, owner, edition, opening, onOpened, children
   // El fuego se prende una sola vez (sigue mientras haya chispas) y se apaga si el sobre se va.
   useEffect(() => {
     if (!origin || !packRef.current || !glCanvas.current || !fxCanvas.current) return;
-    return startBlueFire({ pack: packRef.current, glCanvas: glCanvas.current, fxCanvas: fxCanvas.current, origin, duration: burnMs, paper: design.c1, onBurnt: explode });
+    // Cuando ya no queda nada del sobre, un respiro con la carta entre las cenizas y ¡pum!
+    return startBlueFire({ pack: packRef.current, glCanvas: glCanvas.current, fxCanvas: fxCanvas.current, origin, duration: burnMs, paper: design.c1, onBurnt: () => at(220, explode) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin]);
 
@@ -309,21 +329,29 @@ export function PersonalPack({ roll, owner, edition, opening, onOpened, children
         )}
       </AnimatePresence>
 
-      <div className="ppack-slot">
+      <div className="ppack-slot" ref={slotRef}>
         {phase === 'card' ? (
           children
         ) : (
           // Carta "fantasma" (solo el dorso): la que sale girando del sobre. La de verdad la reemplaza al aterrizar.
           <motion.div
+            ref={ghostRef}
             className="card-wrap ppack-ghost"
-            initial={{ y: '16%', scale: 0.5, opacity: 0 }}
+            initial={fire ? { x: 0, y: 0, scale: 0.6, opacity: 0 } : { y: '16%', scale: 0.5, opacity: 0 }}
             animate={
               fire
                 ? phase === 'burst'
-                  ? { y: ['0%', '-14%', '0%'], scale: [0.86, 1.06, 1], rotateY: [0, 360, 720], rotate: [0, -4, 0], opacity: [1, 1, 1] }
+                  ? {
+                      x: [fit?.x ?? 0, 0, 0],
+                      y: [fit?.y ?? 0, -0.12 * (fit?.h ?? 400), 0],
+                      scale: [fit?.s ?? 0.7, 1.06, 1],
+                      rotateY: [0, 360, 720],
+                      rotate: [0, -4, 0],
+                      opacity: [1, 1, 1],
+                    }
                   : phase === 'charge'
-                    ? { y: '0%', scale: 0.86, opacity: 1 }
-                    : { y: '0%', scale: 0.86, opacity: 0 }
+                    ? { x: fit?.x ?? 0, y: fit?.y ?? 0, scale: fit?.s ?? 0.7, opacity: 1 }
+                    : { x: 0, y: 0, scale: 0.6, opacity: 0 }
                 : phase === 'burst'
                   ? { y: ['16%', '-58%', '0%'], scale: [0.5, 0.66, 1], rotateY: [0, 360, 720], rotate: [0, -5, 0], opacity: [1, 1, 1] }
                   : { y: '16%', scale: 0.5, opacity: 0 }
@@ -354,12 +382,13 @@ export function PersonalPack({ roll, owner, edition, opening, onOpened, children
 
       {phase !== 'card' && (
         <motion.div
+          ref={boxRef}
           className="ppack-pack"
           initial={{ y: -480, rotate: -12, opacity: 0 }}
           animate={out ? (fire ? { opacity: 0 } : { y: 520, rotate: 12, opacity: 0, scale: 0.9 }) : { y: 0, rotate: 0, opacity: 1 }}
           transition={out ? (fire ? { delay: 0.55, duration: 0.5 } : { delay: 0.3, duration: 0.6, ease: 'easeIn' }) : { type: 'spring', stiffness: 140, damping: 13 }}
         >
-          <div className={sealed ? 'pack-float' : ''} style={{ position: 'absolute', inset: 0 }}>
+          <div className={sealed || (fire && phase === 'charge') ? 'pack-float' : ''} style={{ position: 'absolute', inset: 0 }}>
             {/* Luz azul del fuego sobre la mesa. */}
             {fire && origin && <div className="fire-light" />}
             {/* Luz que se escapa por la abertura. */}

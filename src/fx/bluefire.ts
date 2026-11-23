@@ -198,7 +198,7 @@ export interface BlueFireOptions {
   seed?: number;
   /** Color del papel (los pedazos que se desprenden empiezan de ese color y se carbonizan). */
   paper?: string;
-  /** Cuando ya no queda sobre. */
+  /** Cuando ya no queda nada del sobre (ni la orilla encendida). */
   onBurnt?: () => void;
   /** Cuando se apagó la última chispa. */
   onEnd?: () => void;
@@ -311,9 +311,10 @@ export function startBlueFire(o: BlueFireOptions): () => void {
     const url = mcan.toDataURL();
     const img = new Image();
     img.src = url;
-    // Se aplica ya decodificada: así el sobre nunca parpadea completo ni desaparece de golpe.
-    void (img.decode ? img.decode() : Promise.resolve())
-      .catch(() => {})
+    // Se aplica ya decodificada: así el sobre nunca parpadea completo ni desaparece de golpe. Si el
+    // navegador tarda en decodificarla (o nunca avisa, como a veces en iPhone), se aplica igual.
+    const decoded = img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+    void Promise.race([decoded, new Promise((r) => window.setTimeout(r, 150))])
       .then(() => {
         if (stopped) return;
         st.webkitMaskImage = st.maskImage = `url(${url})`;
@@ -461,15 +462,53 @@ export function startBlueFire(o: BlueFireOptions): () => void {
   pack.style.willChange = 'transform';
 
   let stopped = false;
+  let ended = false;
   let raf = 0;
   const t0 = performance.now();
   let last = t0;
   let burnt = false;
   const fadeMs = 900;
 
+  /** Borra los dos lienzos y los esconde: nunca se queda un cuadro viejo pegado en la pantalla. */
+  const wipe = () => {
+    try {
+      if (gl && !gl.isContextLost()) gl.clear(gl.COLOR_BUFFER_BIT);
+    } catch {
+      /* contexto perdido */
+    }
+    if (ctx) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+    }
+    glCanvas.style.visibility = fxCanvas.style.visibility = 'hidden';
+  };
+  /** Se acabó (o algo falló): limpia y avisa, una sola vez. */
+  const finish = () => {
+    if (ended) return;
+    ended = true;
+    cancelAnimationFrame(raf);
+    wipe();
+    if (!burnt) {
+      burnt = true;
+      o.onBurnt?.();
+    }
+    o.onEnd?.();
+  };
+  glCanvas.style.visibility = fxCanvas.style.visibility = 'visible';
+
   const frame = (now: number) => {
-    if (stopped) return;
-    const dt = Math.min(0.05, (now - last) / 1000);
+    if (stopped || ended) return;
+    try {
+      step(now);
+    } catch {
+      finish();
+    }
+  };
+  const step = (now: number) => {
+    // Hasta 0.1 s por cuadro: en un teléfono lento las chispas se apagan a tiempo.
+    const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     adapt(dt);
     const el = now - t0;
@@ -477,7 +516,8 @@ export function startBlueFire(o: BlueFireOptions): () => void {
     const target = burnProgress(t, top) + Math.max(0, el - o.duration) / 4000;
     pushMask(target);
     const p = shownP < 0 ? Math.min(target, -0.02) : shownP;
-    if (!burnt && ((t >= 1 && p >= top) || t >= 1.35)) {
+    // Ya no queda sobre cuando lo último pasó la orilla encendida (`rim` brilla hasta 0.045 después).
+    if (!burnt && (p >= top + 0.045 || t >= 1.35)) {
       burnt = true;
       o.onBurnt?.();
     }
@@ -549,12 +589,8 @@ export function startBlueFire(o: BlueFireOptions): () => void {
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
     }
-    if (el > o.duration + fadeMs && sparks.length === 0) {
-      o.onEnd?.();
-      return;
-    }
-    if (el > o.duration + fadeMs + 1500) {
-      o.onEnd?.();
+    if ((el > o.duration + fadeMs && sparks.length === 0) || el > o.duration + fadeMs + 1500) {
+      finish();
       return;
     }
     raf = requestAnimationFrame(frame);
@@ -564,6 +600,11 @@ export function startBlueFire(o: BlueFireOptions): () => void {
   return () => {
     stopped = true;
     cancelAnimationFrame(raf);
+    wipe();
     if (gl) gl.getExtension('WEBGL_lose_context')?.loseContext();
+    compiled.delete(glCanvas);
+    // Suelta la memoria de los lienzos ya (iPhone tiene un tope de memoria para lienzos).
+    glCanvas.width = glCanvas.height = fxCanvas.width = fxCanvas.height = 0;
+    mcan.width = mcan.height = 0;
   };
 }

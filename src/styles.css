@@ -2191,8 +2191,9 @@ input {
   overflow: hidden;
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--g2), 0 0 40px var(--g2);
 }
+/* Mientras se quema va escondida dentro del sobre: sin sombra ni resplandor que se salgan de él. */
 .ppack-ghost-face.unlit {
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(120, 170, 255, 0.35), 0 0 34px rgba(60, 110, 255, 0.45);
+  box-shadow: inset 0 0 26px rgba(60, 110, 255, 0.5), 0 0 0 1px rgba(120, 170, 255, 0.3);
 }
 .ppack-pack {
   position: absolute;
